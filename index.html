@@ -117,6 +117,15 @@ body.ro [data-act]:not([data-act=export]):not([data-act=copy-teacher]):not([data
 <main class="wrap" id="app"><div class="center"><div><div class="spin"></div><p class="muted" style="margin-top:10px">מתחבר למערכת…</p></div></div></main>
 
 <script>
+// if anything breaks while loading, say so on screen instead of spinning forever
+function showFatal(msg){const a=document.getElementById("app");if(!a)return;
+  a.innerHTML='<div class="center"><div class="card" style="max-width:480px"><h2>המערכת לא נטענה</h2><p class="muted">צלמי את המסך הזה ושלחי למי שמתחזק את המערכת.</p><p dir="ltr" style="font-size:13px;word-break:break-word"></p><div class="row"><button class="btn primary" onclick="location.reload()">לנסות שוב</button></div></div></div>';
+  a.querySelector("p[dir]").textContent=String(msg).slice(0,400)}
+window.addEventListener("error",e=>{if(!window.__booted)showFatal(e.message||"script error")});
+window.addEventListener("unhandledrejection",e=>{if(!window.__booted)showFatal(e.reason?.message||e.reason)});
+setTimeout(()=>{if(!window.__booted)showFatal("timeout: "+(window.__stage||"start"))},20000);
+</script>
+<script>
 "use strict";
 const DAYS=["ראשון","שני","שלישי","רביעי","חמישי","שישי"];
 const MONTHS=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
@@ -366,9 +375,9 @@ function renderTabs(){const n=document.getElementById("tabs"),w=document.getElem
   n.innerHTML=tabs.map(([k,l])=>`<button data-tab="${k}" aria-current="${S.view===k||(k==="teachers"&&S.view==="teacher")}">${l}${k==="users"&&pend?`<span class="badge">${pend}</span>`:""}</button>`).join("")}
 function render(){document.getElementById("mLabel").textContent=monthLabel(S.month);renderTabs();
   document.querySelector(".month").hidden=!S.allowed;
-  if(!S.session||S.auth==="newpass"){app.innerHTML=vAuth();return}
+  if(!S.session||S.auth==="newpass"){if(window.__authReady)window.__booted=true;app.innerHTML=vAuth();return}
   if(!S.profile){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
-  if(!S.allowed){app.innerHTML=`<div class="center"><div class="card" style="max-width:460px"><h2>${S.role==="blocked"?"הגישה שלך נחסמה":"ההרשמה התקבלה"}</h2><p class="muted">${S.role==="blocked"?"פני למנהלת המערכת.":"מנהלת המערכת צריכה לאשר אותך. אחרי האישור תוכלי להיכנס."}</p><div class="row"><button class="btn" data-act="recheck">בדיקה אם אושרתי</button></div></div></div>`;return}
+  if(!S.allowed){window.__booted=true;app.innerHTML=`<div class="center"><div class="card" style="max-width:460px"><h2>${S.role==="blocked"?"הגישה שלך נחסמה":"ההרשמה התקבלה"}</h2><p class="muted">${S.role==="blocked"?"פני למנהלת המערכת.":"מנהלת המערכת צריכה לאשר אותך. אחרי האישור תוכלי להיכנס."}</p><div class="row"><button class="btn" data-act="recheck">בדיקה אם אושרתי</button></div></div></div>`;return}
   if(!S.md){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
   const v={home:vHome,teachers:vTeachers,teacher:vTeacher,import:vImport,settings:vSettings,users:vUsers}[S.view]||vHome;
   const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
@@ -628,11 +637,13 @@ document.getElementById("mNext").onclick=()=>setMonth(shiftMonth(S.month,1));
 /* ---------- boot ---------- */
 function subscribeMonth(){if(S.unsubMonth)S.unsubMonth();const m=S.month;
   S.unsubMonth=S.db.doc("months/"+m).onSnapshot(s=>{if(m!==S.month)return;if(s.metadata.hasPendingWrites&&S.md)return;
-    S.md=Object.assign(emptyMonth(),s.exists?clone(s.data()):{});if(!isTyping())render()},err=>console.error(err))}
+    S.md=Object.assign(emptyMonth(),s.exists?clone(s.data()):{});window.__booted=true;if(!isTyping())render()},err=>{window.__booted=true;showFatal("months: "+(err?.message||err))})}
 function isTyping(){const a=document.activeElement;return a&&(a.tagName==="INPUT"||a.tagName==="SELECT")&&a.type!=="file"&&a.type!=="checkbox"}
 /* ---------- cloud (Supabase) ---------- */
 const SB_URL="https://vgqmvkatyuwrlnanybqr.supabase.co";
 const SB_KEY="sb_publishable_fS0Tc01PeE39LoJgOu0rgA_bK7d_bU3";
+if(typeof supabase==="undefined")throw new Error("supabase library did not load (cdn.jsdelivr.net blocked?)");
+window.__stage="client";
 const sb=supabase.createClient(SB_URL,SB_KEY);
 const CLIENT=Math.random().toString(36).slice(2,12);
 // same doc(path).get/set/onSnapshot shape the rest of the page was written against
@@ -645,27 +656,28 @@ function makeDb(){const listeners={};const snap=d=>({exists:!!d,data:()=>d||unde
     async get(){const {data,error}=await sb.from("app_docs").select("data").eq("path",path).maybeSingle();if(error)throw error;return snap(data?data.data:null)},
     async set(d){const {error}=await sb.from("app_docs").upsert({path,data:d,updated_at:new Date().toISOString(),updated_by:S.uid,client:CLIENT});if(error)throw error},
     onSnapshot(fn,err){(listeners[path]??=[]).push(fn);this.get().then(fn,e=>{console.error(e);err&&err(e)});return()=>{listeners[path]=(listeners[path]||[]).filter(x=>x!==fn)}}}}}}
-async function loadProfile(){let p=null;for(let i=0;i<3&&!p;i++){const {data}=await sb.from("profiles").select("*").eq("id",S.uid).maybeSingle();
+async function loadProfile(){window.__stage="profile";let p=null;for(let i=0;i<3&&!p;i++){const {data,error}=await sb.from("profiles").select("*").eq("id",S.uid).maybeSingle();if(error)throw new Error("profiles: "+error.message);
     if(data)p=data;else await new Promise(r=>setTimeout(r,800))}
   S.profile=p||{role:"pending"};S.role=S.profile.role;
   S.allowed=["viewer","editor","admin"].includes(S.role);S.canEdit=["editor","admin"].includes(S.role);S.isAdmin=S.role==="admin";
   document.body.classList.toggle("ro",S.allowed&&!S.canEdit);
   if(S.allowed&&!S.db)startData();if(S.isAdmin)loadUsers()}
-function startData(){const db=S.db=makeDb();
+function startData(){window.__stage="data";const db=S.db=makeDb();
   let ready=0;const done=()=>{if(++ready===1){subscribeMonth();render()}};
   db.doc("school/config").onSnapshot(s=>{S.school=Object.assign({maxDaily:7,onlyTeachingDays:true},s.exists?clone(s.data()):{});if(ready>=1&&!isTyping())render()});
   db.doc("school/calendar").onSnapshot(s=>{S.cal=Object.assign({enabled:true,ranges:[]},s.exists?clone(s.data()):{});if(ready>=1&&!isTyping())render()});
-  db.doc("school/teachers").onSnapshot(s=>{S.teachers=s.exists?clone(s.data()).list||[]:[];if(ready<1)done();else if(!isTyping())render()},()=>done())}
+  db.doc("school/teachers").onSnapshot(s=>{S.teachers=s.exists?clone(s.data()).list||[]:[];if(ready<1)done();else if(!isTyping())render()},e=>showFatal("teachers: "+(e?.message||e)))}
 async function onSession(session){
   if(!session){if(S.db?.channel)sb.removeChannel(S.db.channel);
     Object.assign(S,{session:null,profile:null,role:null,allowed:false,canEdit:false,isAdmin:false,db:null,md:null,users:null,uid:null,view:"home"});
     document.body.classList.remove("ro");render();return}
   if(S.session&&S.session.user.id===session.user.id){S.session=session;return}
   S.session=session;S.uid=session.user.id;S.profile=null;render();await loadProfile();render()}
-sb.auth.onAuthStateChange((ev,session)=>{
+window.__stage="auth";
+sb.auth.onAuthStateChange((ev,session)=>{window.__authReady=true;
   if(ev==="PASSWORD_RECOVERY"){S.auth="newpass";S.authMsg=""}
   // run outside the auth callback: awaiting supabase calls inside it can stall
-  setTimeout(()=>onSession(session).then(()=>{if(ev==="PASSWORD_RECOVERY")render()}),0)});
+  setTimeout(()=>onSession(session).catch(e=>{window.__booted=false;showFatal(e?.message||e)}).then(()=>{if(ev==="PASSWORD_RECOVERY")render()}),0)});
 </script>
 
 </body></html>

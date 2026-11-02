@@ -10,7 +10,7 @@
   --bg:#EEF2F4; --card:#FFFFFF; --ink:#1B2A33; --muted:#5A6A74; --line:#D3DCE1;
   --accent:#1F6B52; --accent-ink:#FFFFFF; --accent-soft:#DCEDE5;
   --marker:#F2C94C; --marker-ink:#2B2300; --danger:#B03535; --danger-soft:#F7E1E1;
-  --warn:#9A6200; --warn-soft:#FBEFD6; --sick:#7A3FA0; --sick-soft:#EEE3F5; --off:#E3E8EB;
+  --warn:#9A6200; --warn-soft:#FBEFD6; --sick:#7A3FA0; --sick-soft:#EEE3F5; --sick-ink:#FFFFFF; --off:#E3E8EB;
   --f-display:"Secular One","Assistant",system-ui,sans-serif;
   --f-body:"Assistant",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
 }
@@ -18,12 +18,12 @@
   --bg:#0F171C; --card:#16222A; --ink:#E3EBEF; --muted:#93A4AE; --line:#293842;
   --accent:#4DB38C; --accent-ink:#06150F; --accent-soft:#183A2E;
   --marker:#E6BE45; --marker-ink:#231C00; --danger:#E27474; --danger-soft:#3A1E21;
-  --warn:#E5B04E; --warn-soft:#352A13; --sick:#C49BE0; --sick-soft:#2D2238; --off:#1C2930; color-scheme:dark}}
+  --warn:#E5B04E; --warn-soft:#352A13; --sick:#8E5BB8; --sick-soft:#2D2238; --sick-ink:#FFFFFF; --off:#1C2930; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0F171C; --card:#16222A; --ink:#E3EBEF; --muted:#93A4AE; --line:#293842;
   --accent:#4DB38C; --accent-ink:#06150F; --accent-soft:#183A2E;
   --marker:#E6BE45; --marker-ink:#231C00; --danger:#E27474; --danger-soft:#3A1E21;
-  --warn:#E5B04E; --warn-soft:#352A13; --sick:#C49BE0; --sick-soft:#2D2238; --off:#1C2930; color-scheme:dark}
+  --warn:#E5B04E; --warn-soft:#352A13; --sick:#8E5BB8; --sick-soft:#2D2238; --sick-ink:#FFFFFF; --off:#1C2930; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;direction:rtl}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--accent)}
@@ -78,13 +78,13 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
 .cal .hd{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
 .day{border:1px solid var(--line);border-radius:10px;padding:6px;min-height:96px;display:flex;flex-direction:column;gap:4px;background:var(--card);min-width:0}
 .day.off{background:var(--off);border-style:dashed}
-.day.sick{background:var(--sick-soft);border-color:var(--sick)}
+.day.sick{background:var(--sick);border-color:var(--sick);color:var(--sick-ink)}.day.sick .meta,.day.sick .sickl{color:var(--sick-ink);font-weight:700}
 .day.has{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .day .dn{display:flex;justify-content:space-between;font-weight:700;font-size:14px}
 .day .meta{font-size:12px;color:var(--muted);line-height:1.3}
 .day input{width:100%;padding:4px 6px;text-align:center;font-weight:700}
 .day .sk{font-size:11px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:6px;padding:1px 4px;cursor:pointer}
-.day.sick .sk{color:var(--sick);border-color:var(--sick)}
+.day.sick .sk{color:var(--sick-ink);border-color:var(--sick-ink)}
 .qday{min-height:0;gap:2px}.qday input{font-weight:700}.qday .meta b{color:var(--ink)}.qday.over{border-color:var(--danger);background:var(--danger-soft)}.qday.full{border-color:var(--accent)}
 .drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted);display:block}
 .drop:hover{border-color:var(--accent);color:var(--accent)}
@@ -167,8 +167,7 @@ function noSchedule(t){return !(t.hours||[]).some(h=>+h>0)}
 function freeLeft(t,day){return Math.max(0,capacity(t,day)-subOf(t.id,day.date))}
 function capacity(t,day){ // max substitution hours allowed that day
   if(!dayOpen(day)||isSick(t.id,day.date))return 0;
-  if(noSchedule(t))return +S.school.freeMax||6;
-  const s=sched(t,day.wd);if(S.school.onlyTeachingDays&&s===0)return 0;
+  const s=sched(t,day.wd);if(s===0)return +S.school.freeMax||6;
   return Math.max(0,(+S.school.maxDaily||7)-s)}
 function totalSubs(){let n=0;for(const tid in S.md.subs)if(teacherById(tid))for(const d in S.md.subs[tid])n+=+S.md.subs[tid][d]||0;return n}
 function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.subs[tid][d]||0;return n}
@@ -414,10 +413,10 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   const sumT=S.teachers.reduce((a,t)=>a+(+S.md.targets[t.id]||0),0);
   if(S.teachers.length)h+=`<div class="card" style="gap:6px"><h2>כמה שעות כל מורה צריכה לקבל החודש</h2><p class="muted">הקלידי בעמודה "צריכה לקבל" (או העלי קובץ בלשונית העלאת קבצים), ואז לחצי <b>תכנון אוטומטי</b>. המערכת תמצא לכל מורה באילו ימים לדווח. מורה בלי מספר לא תקבל שעות, אלא אם לא הזנת מספרים לאף מורה, ואז התקן מתחלק שווה.</p>
     ${sumT?`<p>סך השעות שהזנת: <b>${sumT}</b>${q?` מתוך תקן של <b>${q}</b>`:""}</p>`:""}${q&&sumT>q?`<div class="note bad">הזנת ${sumT-q} שעות יותר מהתקן. התכנון יעצור כשהתקן ייגמר.</div>`:""}</div>`;
-  if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה</th></tr></thead><tbody>`;
-    for(const t of S.teachers){const s=teacherSubs(t.id),days=Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length,sick=(S.md.sick[t.id]||[]).length,tg=+S.md.targets[t.id]||0;
-      h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick}</span>`:"–"}</td></tr>`}
-    h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: עד ${S.school.maxDaily} שעות ביום כולל המערכת, לא בימי מחלה, ${S.school.onlyTeachingDays?"רק בימים שהמורה מלמדת,":""} ובסך הכל לא יותר מהתקן.</p>`}
+  if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה החודש</th></tr></thead><tbody>`;
+    for(const t of S.teachers){const s=teacherSubs(t.id),days=Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length,sick=(S.md.sick[t.id]||[]).filter(d=>d.startsWith(S.month)).length,tg=+S.md.targets[t.id]||0;
+      h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick} ימים</span>`:"0"}</td></tr>`}
+    h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: עד ${S.school.maxDaily} שעות ביום כולל המערכת, ביום בלי שעות הוראה עד ${+S.school.freeMax||6} שעות, לא בימי מחלה, ולא יותר מהתקן של כל יום.</p>`}
   return h}
 
 function vTeachers(){let h=`<div class="row" style="justify-content:space-between"><div><h1>מורות ומערכת שעות</h1><p class="muted">מספר שעות ההוראה בכל יום. המספרים נשמרים מיד.</p></div></div>
@@ -448,8 +447,8 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
     else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
-      h+=`<div class="meta">${noSchedule(t)?"אין מערכת":"מערכת "+sched(t,day.wd)} · פנוי לה עוד ${Math.max(0,c-v)}${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
-      h+=sk?`<div class="meta" style="color:var(--sick)">לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
+      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
+      h+=sk?`<div class="meta sickl">יום מחלה<br>לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
   h+=`</div></div>`;
   const lines=days.filter(d=>subOf(t.id,d.date)).map(d=>`${fmtDate(d.date)} (${DAYS[d.wd]}) – ${subOf(t.id,d.date)} שעות`);
@@ -471,11 +470,11 @@ function vDay(){const days=monthDays(S.month).filter(dayOpen);
     <div class="kpi"><div class="n">${daySubs(day.date)}</div><div class="l">שעות מ"מ ששובצו ביום הזה</div></div>
     ${ql===null?"":`<div class="kpi"><div class="n" style="color:${ql<0?"var(--danger)":"inherit"}">${ql}</div><div class="l">נותרו בתקן של היום</div></div>`}</div>`;
   if(ql!==null&&ql<=0)h+=`<div class="note bad">התקן של ${fmtDate(day.date)} נוצל${ql<0?" ואף עבר":""}. אי אפשר לדווח בו עוד שעות.</div>`;
-  h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>אפשר עוד שעה?</th><th></th><th>במערכת</th><th>שובץ מ"מ</th></tr></thead><tbody>`;
+  h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>אפשר עוד שעה?</th><th></th><th>שעות הוראה</th><th>שובץ מ"מ</th></tr></thead><tbody>`;
   for(const r of rows){const st=r.sk?`<span class="pill sick">יום מחלה</span>`:r.f>0?`<span class="pill ok">כן, עוד ${r.f}</span>`:`<span class="pill bad">לא</span>`;
     const canAdd=r.f>0&&(ql===null||ql>0);
     h+=`<tr><td><button class="btn" data-teacher="${r.t.id}" style="padding:4px 10px">${esc(r.t.name)}</button></td><td>${st}</td>
-    <td><button class="btn" data-act="day-add" data-id="${r.t.id}" ${canAdd?"":"disabled"} style="padding:3px 10px">+1</button> <button class="btn" data-act="day-sub" data-id="${r.t.id}" ${r.v?"":"disabled"} style="padding:3px 10px">−1</button></td><td>${noSchedule(r.t)?"אין מערכת":sched(r.t,day.wd)}</td><td><b>${r.v||"–"}</b></td></tr>`}
+    <td><button class="btn" data-act="day-add" data-id="${r.t.id}" ${canAdd?"":"disabled"} style="padding:3px 10px">+1</button> <button class="btn" data-act="day-sub" data-id="${r.t.id}" ${r.v?"":"disabled"} style="padding:3px 10px">−1</button></td><td>${sched(r.t,day.wd)||"אין"}</td><td><b>${r.v||"–"}</b></td></tr>`}
   h+=`</tbody></table></div>`;
   // whole month at a glance: hours still free per teacher per day
   h+=`<div class="card"><h2>כל החודש במבט אחד</h2><p class="muted">בכל תא: כמה שעות מ"מ אפשר עוד לתת למורה באותו יום. ריק = לא פנויה.</p>
@@ -532,9 +531,8 @@ function vSettings(){const hol=S.md.holidays.filter(d=>d.startsWith(S.month)).so
   let h=`<h1>הגדרות</h1>
   <div class="card"><h2>כללי תכנון</h2><div class="row">
    <label class="f">מקסימום שעות ביום למורה (כולל מערכת)<input type="number" min="1" max="12" id="maxDaily" value="${S.school.maxDaily}"></label>
-   <label class="row" style="gap:6px;align-self:flex-end"><input type="checkbox" id="onlyTD" ${S.school.onlyTeachingDays?"checked":""}> לשבץ רק בימים שהמורה מלמדת</label>
-   <label class="f">מורה בלי מערכת: עד כמה שעות מ"מ ביום<input type="number" min="1" max="12" id="freeMax" value="${+S.school.freeMax||6}"></label></div>
-   <p class="muted" style="font-size:14px">מורה שאין לה אף שעה במערכת נחשבת פנויה בכל יום לימודים (חוץ מימי מחלה וחופשות).</p></div>
+   <label class="f">יום בלי שעות הוראה: עד כמה שעות מ"מ<input type="number" min="1" max="12" id="freeMax" value="${+S.school.freeMax||6}"></label></div>
+   <p class="muted" style="font-size:14px">ביום שאין למורה שעות הוראה במערכת היא פנויה למילוי מקום עד המספר הזה (חוץ מימי מחלה וחופשות).</p></div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החופשות של משרד החינוך (יסודי)</h2>
    <label class="row" style="gap:6px"><input type="checkbox" id="calOn" ${S.cal.enabled?"checked":""}> פעיל</label></div>
    <p class="muted">${esc(S.cal.title||"")} · בימי החופשה לא ישובץ מילוי מקום. אפשר להוסיף ולהסיר חופשות, והשינוי נשמר לכל המשתמשות.</p>

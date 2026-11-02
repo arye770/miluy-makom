@@ -343,7 +343,12 @@ async function applyReview(){const R=S.review;
       if(r.match==="new"||!r.match){S.teachers.push({id:uid(),name:r.name,hours:r.hours})}
       else{const t=teacherById(r.match);if(t)t.hours=r.hours}}
     S.teachers.sort((a,b)=>a.name.localeCompare(b.name,"he"));await saveTeachers();toast("מערכת השעות נשמרה")}
-  if(R.kind==="sick"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;await addSick(r.match,r.from,r.to);n++}toast(n+" אישורי מחלה נשמרו")}
+  if(R.kind==="sick"){let n=0;const per={};for(const r of R.rows){if(!r.match||r.match==="skip")continue;await addSick(r.match,r.from,r.to);n++;
+      for(const d of datesBetween(r.from,r.to))per[d.slice(0,7)]=(per[d.slice(0,7)]||0)+1}
+    // show the month the certificates belong to, not whatever month happened to be open
+    const top=Object.keys(per).sort((a,b)=>per[b]-per[a])[0];
+    if(top&&!per[S.month]){S.review=null;S.view="home";setMonth(top);toast(n+" אישורי מחלה נשמרו ב"+monthLabel(top)+". עברתי לחודש הזה.");return}
+    toast(n+" אישורי מחלה נשמרו"+(Object.keys(per).length>1?" ("+Object.keys(per).sort().map(monthLabel).join(", ")+")":""))}
   if(R.kind==="quota"){let n=0,other=0;S.md.quotaDays=S.md.quotaDays||{};
     S.md.quotaParts=S.md.quotaParts||{};
     for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}const tot=(+r.hours||0)+(+r.abs||0);

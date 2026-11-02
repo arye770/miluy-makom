@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>ניהול מילוי מקום</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Secular+One&display=swap">
+<style>
+/* Layout: one column "יומן" — sticky top bar with month + tabs, content cards below; teacher screen is a month grid Sun–Fri */
+:root{
+  --bg:#EEF2F4; --card:#FFFFFF; --ink:#1B2A33; --muted:#5A6A74; --line:#D3DCE1;
+  --accent:#1F6B52; --accent-ink:#FFFFFF; --accent-soft:#DCEDE5;
+  --marker:#F2C94C; --marker-ink:#2B2300; --danger:#B03535; --danger-soft:#F7E1E1;
+  --warn:#9A6200; --warn-soft:#FBEFD6; --sick:#7A3FA0; --sick-soft:#EEE3F5; --off:#E3E8EB;
+  --f-display:"Secular One","Assistant",system-ui,sans-serif;
+  --f-body:"Assistant",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F171C; --card:#16222A; --ink:#E3EBEF; --muted:#93A4AE; --line:#293842;
+  --accent:#4DB38C; --accent-ink:#06150F; --accent-soft:#183A2E;
+  --marker:#E6BE45; --marker-ink:#231C00; --danger:#E27474; --danger-soft:#3A1E21;
+  --warn:#E5B04E; --warn-soft:#352A13; --sick:#C49BE0; --sick-soft:#2D2238; --off:#1C2930; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F171C; --card:#16222A; --ink:#E3EBEF; --muted:#93A4AE; --line:#293842;
+  --accent:#4DB38C; --accent-ink:#06150F; --accent-soft:#183A2E;
+  --marker:#E6BE45; --marker-ink:#231C00; --danger:#E27474; --danger-soft:#3A1E21;
+  --warn:#E5B04E; --warn-soft:#352A13; --sick:#C49BE0; --sick-soft:#2D2238; --off:#1C2930; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;direction:rtl}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--accent)}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px;display:flex;flex-direction:column;gap:18px}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--accent);color:var(--accent-ink)}
+header.top .in{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.brand{font-family:var(--f-display);font-size:22px;letter-spacing:.2px;margin-inline-end:auto}
+.month{display:flex;align-items:center;gap:6px}
+.month button{background:transparent;color:var(--accent-ink);border:1px solid color-mix(in srgb,var(--accent-ink) 40%,transparent);border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer}
+.month b{min-width:110px;text-align:center;font-weight:700}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;width:100%}
+nav.tabs button{background:transparent;border:0;color:var(--accent-ink);opacity:.8;font:600 15px var(--f-body);padding:6px 12px;border-radius:999px;cursor:pointer}
+nav.tabs button[aria-current="true"]{background:var(--accent-ink);color:var(--accent);opacity:1}
+h1,h2,h3{font-family:var(--f-display);font-weight:400;margin:0;text-wrap:balance}
+h1{font-size:28px} h2{font-size:21px} h3{font-size:17px}
+p{margin:0}
+.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.kpi .n{font-family:var(--f-display);font-size:34px;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--muted);font-size:14px}
+.kpi.hl .n{background:linear-gradient(transparent 55%,var(--marker) 55%);display:inline;padding:0 4px;color:var(--ink)}
+.bar{height:10px;border-radius:99px;background:var(--off);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.bar.over>i{background:var(--danger)}
+button.btn{font:700 15px var(--f-body);border-radius:10px;padding:9px 16px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.btn.danger{color:var(--danger);border-color:var(--danger)}
+button.btn:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
+input,select{font:16px var(--f-body);color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+input[type=number]{width:70px;font-variant-numeric:tabular-nums}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:13px;color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
+.pill{display:inline-block;font-size:13px;font-weight:700;padding:2px 10px;border-radius:99px;background:var(--off);color:var(--muted)}
+.pill.ok{background:var(--accent-soft);color:var(--accent)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--danger-soft);color:var(--danger)}
+.pill.sick{background:var(--sick-soft);color:var(--sick)}
+.note{border-radius:10px;padding:10px 14px;background:var(--warn-soft);color:var(--ink);font-size:15px}
+.note.bad{background:var(--danger-soft)}
+.note.ok{background:var(--accent-soft)}
+.cal{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.cal .hd{font-size:13px;color:var(--muted);text-align:center;font-weight:600}
+.day{border:1px solid var(--line);border-radius:10px;padding:6px;min-height:96px;display:flex;flex-direction:column;gap:4px;background:var(--card);min-width:0}
+.day.off{background:var(--off);border-style:dashed}
+.day.sick{background:var(--sick-soft);border-color:var(--sick)}
+.day.has{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.day .dn{display:flex;justify-content:space-between;font-weight:700;font-size:14px}
+.day .meta{font-size:12px;color:var(--muted);line-height:1.3}
+.day input{width:100%;padding:4px 6px;text-align:center;font-weight:700}
+.day .sk{font-size:11px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:6px;padding:1px 4px;cursor:pointer}
+.day.sick .sk{color:var(--sick);border-color:var(--sick)}
+.qday{min-height:0;gap:2px}.qday input{font-weight:700}.qday .meta b{color:var(--ink)}.qday.over{border-color:var(--danger);background:var(--danger-soft)}.qday.full{border-color:var(--accent)}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted);display:block}
+.drop:hover{border-color:var(--accent);color:var(--accent)}
+.drop input{display:none}
+.auth{max-width:420px;margin:6vh auto 0;width:100%}
+.auth form{display:flex;flex-direction:column;gap:12px}.auth input{width:100%}
+.linkbtn{background:none;border:0;color:var(--accent);font:600 15px var(--f-body);cursor:pointer;padding:0;text-decoration:underline}
+.who{display:flex;align-items:center;gap:8px;font-size:14px}.who button{background:transparent;color:var(--accent-ink);border:1px solid color-mix(in srgb,var(--accent-ink) 40%,transparent);border-radius:8px;padding:4px 10px;font:600 14px var(--f-body);cursor:pointer}
+.badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:99px;background:var(--marker);color:var(--marker-ink);font-size:12px;font-weight:700;margin-inline-start:4px}
+body.ro main input,body.ro main select{pointer-events:none;background:var(--off)}
+body.ro [data-act]:not([data-act=export]):not([data-act=copy-teacher]):not([data-act=cancel]):not([data-act=logout]),body.ro .sk,body.ro [data-delhol],body.ro [data-delrange],body.ro .drop{display:none}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-weight:600;z-index:20;max-width:90vw}
+.center{min-height:60vh;display:grid;place-items:center;text-align:center}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;font-size:14px}
+.chip button{border:0;background:transparent;color:var(--danger);cursor:pointer;font-size:16px;line-height:1}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--danger-soft);padding:8px 12px;border-radius:10px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+@media (max-width:560px){.cal{gap:3px}.day{min-height:84px;padding:4px}.day .meta{font-size:11px}h1{font-size:24px}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head><body>
+<header class="top"><div class="in">
+  <div class="brand">מילוי מקום</div>
+  <div class="month"><button id="mPrev" aria-label="חודש קודם">›</button><b id="mLabel"></b><button id="mNext" aria-label="חודש הבא">‹</button></div>
+  <div class="who" id="who"></div>
+  <nav class="tabs" id="tabs"></nav>
+</div></header>
+<main class="wrap" id="app"><div class="center"><div><div class="spin"></div><p class="muted" style="margin-top:10px">מתחבר למערכת…</p></div></div></main>
+
+<script>
+"use strict";
+const DAYS=["ראשון","שני","שלישי","רביעי","חמישי","שישי"];
+const MONTHS=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+const S={db:null,session:null,profile:null,role:null,canEdit:false,isAdmin:false,auth:"login",authMsg:"",authOk:false,users:null,uid:null,allowed:false,school:{maxDaily:7,onlyTeachingDays:true},cal:{enabled:true,ranges:[]},teachers:[],
+  month:null,md:null,view:"home",teacher:null,unsubMonth:null,sample:null,downloads:null,busy:{},review:null,confirm:null};
+const app=document.getElementById("app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const clone=o=>JSON.parse(JSON.stringify(o??{}));
+function toast(t){const d=document.createElement("div");d.className="toast";d.textContent=t;document.body.append(d);setTimeout(()=>d.remove(),3200)}
+function curMonth(){const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)}
+function monthLabel(m){const[y,mm]=m.split("-");return MONTHS[+mm-1]+" "+y}
+function shiftMonth(m,k){let[y,mm]=m.split("-").map(Number);mm+=k;while(mm>12){mm-=12;y++}while(mm<1){mm+=12;y--}return y+"-"+pad(mm)}
+function monthDays(m){const[y,mm]=m.split("-").map(Number);const n=new Date(y,mm,0).getDate();const out=[];
+  for(let d=1;d<=n;d++){const wd=new Date(y,mm-1,d).getDay();out.push({date:m+"-"+pad(d),d,wd})}return out}
+function fmtDate(iso){const[y,m,d]=iso.split("-");return +d+"."+(+m)}
+const emptyMonth=()=>({quotaDays:{},holidays:[],sick:{},subs:{},locked:{},targets:{}});
+try{S.month=localStorage.getItem("mm.month")||curMonth()}catch(e){S.month=curMonth()}
+
+/* ---------- writes: one at a time per document ---------- */
+const queues={};
+function write(path,data){if(!S.canEdit){toast("אין לך הרשאת עריכה");return Promise.resolve()}const p=(queues[path]||Promise.resolve()).then(()=>S.db.doc(path).set(data)).catch(e=>{
+  toast("השמירה נכשלה. בדקי חיבור לאינטרנט ונסי שוב.");console.error(e)});
+  queues[path]=p;return p}
+const saveMonth=()=>write("months/"+S.month,S.md);
+const saveTeachers=()=>write("school/teachers",{list:S.teachers});
+const saveSchool=()=>write("school/config",S.school);
+const saveCal=()=>write("school/calendar",S.cal);
+
+/* ---------- capacity & planning ---------- */
+function teacherById(id){return S.teachers.find(t=>t.id===id)}
+function sched(t,wd){return wd>5?0:(+((t.hours||[])[wd])||0)}
+function isSick(tid,date){return (S.md.sick[tid]||[]).includes(date)}
+function subOf(tid,date){return +((S.md.subs[tid]||{})[date])||0}
+function calHoliday(date){if(!S.cal.enabled)return null;const r=(S.cal.ranges||[]).find(r=>date>=r.from&&date<=(r.to||r.from));return r?r.name||"חופשה":null}
+function holidayName(date){return S.md.holidays.includes(date)?"חופש":calHoliday(date)}
+function dayOpen(day){return day.wd!==6&&!holidayName(day.date)}
+function capacity(t,day){ // max substitution hours allowed that day
+  if(!dayOpen(day)||isSick(t.id,day.date))return 0;
+  const s=sched(t,day.wd);if(S.school.onlyTeachingDays&&s===0)return 0;
+  return Math.max(0,(+S.school.maxDaily||7)-s)}
+function totalSubs(){let n=0;for(const tid in S.md.subs)if(teacherById(tid))for(const d in S.md.subs[tid])n+=+S.md.subs[tid][d]||0;return n}
+function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.subs[tid][d]||0;return n}
+function hasDayQuota(){return Object.values(S.md.quotaDays||{}).some(v=>+v>0)}
+function dayQuota(date){return hasDayQuota()?(+S.md.quotaDays[date]||0):Infinity}
+function quotaTotal(){let n=0;for(const d in (S.md.quotaDays||{}))if(d.startsWith(S.month))n+=+S.md.quotaDays[d]||0;return n}
+function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=subOf(t.id,date);return n}
+function problems(){const out=[];const days=monthDays(S.month);
+  for(const t of S.teachers)for(const day of days){const h=subOf(t.id,day.date);if(!h)continue;
+    if(isSick(t.id,day.date))out.push(t.name+" · "+fmtDate(day.date)+": מדווח מילוי מקום ביום מחלה");
+    else if(!dayOpen(day))out.push(t.name+" · "+fmtDate(day.date)+": מדווח ביום שאין בו לימודים");
+    else if(sched(t,day.wd)+h>(+S.school.maxDaily||7))out.push(t.name+" · "+fmtDate(day.date)+": עובר "+S.school.maxDaily+" שעות ביום ("+sched(t,day.wd)+" במערכת + "+h+" מילוי)");}
+  if(hasDayQuota())for(const day of days){const u=daySubs(day.date),q=dayQuota(day.date);if(u>q)out.push(fmtDate(day.date)+": שובצו "+u+" שעות אבל בתקן של היום יש רק "+q)}
+  return out}
+// choose a day: spread her hours, leave room on days other teachers depend on
+function pickDay(days,cap,given,pool,demand){let best=null;for(const d of days){const c=cap[d.date];if(c<=0||pool[d.date]<=0)continue;
+  const score=(given[d.date]||0)*100+(demand?demand[d.date]*3:0)-Math.min(pool[d.date],50)-c;if(!best||score<best.score)best={d,score}}return best&&best.d}
+function monthCapacity(t){return monthDays(S.month).reduce((a,d)=>a+capacity(t,d),0)}
+function planTeacher(t){const md=S.md,days=monthDays(S.month).filter(dayOpen);const subs={},cap={},pool={};let have=0;
+  for(const d of days){const h=(md.locked[t.id]||{})[d.date]?subOf(t.id,d.date):0;if(h){subs[d.date]=h;have+=h}
+    cap[d.date]=Math.max(0,capacity(t,d)-h);pool[d.date]=dayQuota(d.date)-daySubs(d.date,t.id)-h}
+  let need=Math.max(0,(+md.targets[t.id]||0)-have);const want=need;
+  while(need>0){const d=pickDay(days,cap,subs,pool);if(!d)break;subs[d.date]=(subs[d.date]||0)+1;cap[d.date]--;pool[d.date]--;need--}
+  const byQuota=need>0&&days.some(d=>cap[d.date]>0);
+  md.subs[t.id]=subs;if(!Object.keys(subs).length)delete md.subs[t.id];
+  return {placed:want-need,missing:need,byQuota}}
+function runPlan(){
+  const md=S.md,days=monthDays(S.month).filter(dayOpen);
+  const subs={},assigned={},cap={},pool={};
+  for(const d of days)pool[d.date]=dayQuota(d.date);
+  // keep hand-entered hours
+  for(const t of S.teachers){subs[t.id]={};assigned[t.id]=0;cap[t.id]={};
+    for(const day of days){const lockedH=(md.locked[t.id]||{})[day.date]?subOf(t.id,day.date):0;
+      if(lockedH){subs[t.id][day.date]=lockedH;assigned[t.id]+=lockedH;pool[day.date]-=lockedH}
+      cap[t.id][day.date]=Math.max(0,capacity(t,day)-lockedH)}}
+  const hasTargets=S.teachers.some(t=>+md.targets[t.id]>0);
+  if(!hasDayQuota()&&!hasTargets)return {left:0,short:[]};
+  const need=t=>hasTargets?Math.max(0,(+md.targets[t.id]||0)-assigned[t.id]):Infinity;
+  const fair=t=>hasTargets?assigned[t.id]/(+md.targets[t.id]||1):assigned[t.id];
+  for(let guard=0;guard<20000;guard++){
+    const cands=S.teachers.filter(t=>need(t)>0&&days.some(d=>cap[t.id][d.date]>0&&pool[d.date]>0));
+    if(!cands.length)break;
+    cands.sort((a,b)=>fair(a)-fair(b)||a.name.localeCompare(b.name,"he"));
+    const t=cands[0];const demand={};
+    for(const d of days)demand[d.date]=cands.reduce((n,x)=>n+(x!==t&&cap[x.id][d.date]>0?1:0),0);
+    const d=pickDay(days,cap[t.id],subs[t.id],pool,demand);
+    subs[t.id][d.date]=(subs[t.id][d.date]||0)+1;cap[t.id][d.date]--;pool[d.date]--;assigned[t.id]++}
+  for(const tid in subs)if(!Object.keys(subs[tid]).length)delete subs[tid];
+  md.subs=subs;
+  const left=hasDayQuota()?days.reduce((a,d)=>a+Math.max(0,pool[d.date]),0):0;
+  const short=hasTargets?S.teachers.filter(t=>need(t)>0&&+md.targets[t.id]>0):[];
+  return {left,short}}
+
+/* ---------- name matching ---------- */
+const norm=s=>String(s||"").replace(/[֑-ׇ"'`׳״.,\-()]/g," ").replace(/\s+/g," ").trim().toLowerCase();
+function matchTeacher(name){const n=norm(name);if(!n)return "";let t=S.teachers.find(t=>norm(t.name)===n);if(t)return t.id;
+  const parts=n.split(" ");let best=null,bs=0;
+  for(const t of S.teachers){const tp=norm(t.name).split(" ");const hit=parts.filter(p=>p.length>1&&tp.includes(p)).length;
+    const sc=hit/Math.max(parts.length,tp.length);if(sc>bs){bs=sc;best=t}}
+  return bs>=0.5?best.id:""}
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+
+/* ---------- file reading ---------- */
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[src="'+src+'"]'))return res();
+  const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.append(s)})}
+async function xlsxText(file){await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+  const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});return wb.SheetNames.map(n=>"### "+n+"\n"+XLSX.utils.sheet_to_csv(wb.Sheets[n])).join("\n\n")}
+async function pdfParts(file){await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js");
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;let text="";const imgs=[];
+  for(let i=1;i<=Math.min(pdf.numPages,12);i++){const pg=await pdf.getPage(i);const tc=await pg.getTextContent();text+=tc.items.map(x=>x.str).join(" ")+"\n";
+    if(imgs.length<5){const vp=pg.getViewport({scale:1.6});const c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;
+      await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;imgs.push(await new Promise(r=>c.toBlob(r,"image/jpeg",0.85)))}}
+  return text.replace(/\s/g,"").length>80?{text}:{images:imgs}}
+// big files are read in parts, so no teacher is cut off
+const CHUNK=24000;
+function splitText(text,head){const out=[];let cur="";for(const line of text.split("\n")){if(cur.length+line.length>CHUNK&&cur.trim()){out.push(cur);cur=head?head+"\n":""}cur+=line+"\n"}if(cur.trim())out.push(cur);return out}
+async function xlsxChunks(file){await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+  const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});const out=[];let cur="";
+  for(const n of wb.SheetNames){const t="### "+n+"\n"+XLSX.utils.sheet_to_csv(wb.Sheets[n]).replace(/,+$/gm,"");
+    if(t.length>CHUNK){if(cur.trim())out.push(cur);cur="";out.push(...splitText(t,t.split("\n").slice(0,4).join("\n")));continue}
+    if(cur.length+t.length>CHUNK&&cur.trim()){out.push(cur);cur=""}cur+=t+"\n\n"}
+  if(cur.trim())out.push(cur);return out.map(text=>({text}))}
+async function pdfChunks(file){await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js");
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;const n=Math.min(pdf.numPages,200);const texts=[];
+  for(let i=1;i<=n;i++){const pg=await pdf.getPage(i);const tc=await pg.getTextContent();texts.push("--- עמוד "+i+" ---\n"+tc.items.map(x=>x.str).join(" "))}
+  if(texts.join("").replace(/\s|-|עמוד|\d/g,"").length>40*n){const out=[];let cur="";
+    for(const t of texts){if(cur.length+t.length>CHUNK&&cur){out.push({text:cur});cur=""}cur+=t+"\n"}if(cur)out.push({text:cur});return out}
+  const lim=S.sample?await S.sample.limits().catch(()=>null):null;const per=Math.max(1,Math.min(4,lim?.images?.maxCount||4));const out=[];
+  for(let i=1;i<=n;i+=per){const imgs=[];for(let j=i;j<Math.min(n+1,i+per);j++){const pg=await pdf.getPage(j);const vp=pg.getViewport({scale:1.6});
+      const c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+      imgs.push(await new Promise(r=>c.toBlob(r,"image/jpeg",0.85)))}out.push({images:imgs})}
+  return out}
+async function fileChunks(file){const n=file.name.toLowerCase();
+  if(/\.(xlsx|xls|xlsm|ods)$/.test(n))return xlsxChunks(file);
+  if(/\.(csv|txt|tsv)$/.test(n)){const t=await file.text();return splitText(t,t.split("\n")[0]).map(text=>({text}))}
+  if(n.endsWith(".pdf")||file.type==="application/pdf")return pdfChunks(file);
+  if(file.type.startsWith("image/"))return [{images:[file]}];
+  throw new Error("סוג קובץ לא נתמך: "+file.name)}
+async function fileParts(file){const ch=await fileChunks(file);const text=ch.filter(c=>c.text).map(c=>c.text).join("\n");return text?{text}:{images:ch[0].images}}
+async function askAI(prompt,parts){
+  if(!S.sample)throw new Error("קריאת קבצים חכמה לא זמינה כאן. אפשר להזין ידנית.");
+  const opts={modelTier:"complex"};let input=prompt;
+  if(parts.text)input+="\n\nתוכן הקובץ:\n"+parts.text.slice(0,180000);
+  if(parts.images){opts.images=parts.images;input+="\n\nהקובץ מצורף כתמונה."}
+  return S.sample.json(input,opts)}
+
+/* ---------- import flows ---------- */
+async function importSchedule(files){
+  const acc={},chunks=[];
+  for(const f of files)for(const c of await fileChunks(f))chunks.push(c);
+  for(let k=0;k<chunks.length;k++){const parts=chunks[k];if(chunks.length>1){S.busy.schedule="קוראת חלק "+(k+1)+" מתוך "+chunks.length+"…";render()}
+    const r=await askAI(`${chunks.length>1?"זה חלק "+(k+1)+" מתוך "+chunks.length+" של קובץ המערכת. ":""}החזר את כל המורות שמופיעות כאן, בלי לדלג על אף אחת ובלי לקצר את הרשימה.
+שים לב לכותרות הימים: בטבלה בעברית העמודה הימנית היא בדרך כלל יום ראשון. אם אין לימודים ביום שישי, כתוב 0 בשישי.
+זהו קובץ מערכת שעות של בית ספר בישראל. חלץ לכל מורה את מספר שעות ההוראה שלה בכל יום בשבוע (ראשון עד שישי).
+ספור רק שעות שבהן כתובה כיתה (למשל א1, ב'2, ג3, ה'1 וכדומה), כלומר שיעורים פרונטליים בכיתה.
+אל תספור: שעות פרטני, שהייה, שעות שכבה, ישיבות, תפקיד, תורנות, ריכוז, ייעוץ, או כל שעה שלא כתובה בה כיתה.
+אם המערכת בנויה לפי כיתות, ספור לכל מורה כמה שעות כיתה היא מלמדת בכל יום.
+החזר JSON בלבד בצורה: {"teachers":[{"name":"שם מלא","hours":[ראשון,שני,שלישי,רביעי,חמישי,שישי]}]}
+דוגמה: {"teachers":[{"name":"רונית כהן","hours":[5,6,0,4,6,0]}]}`,parts);
+    // the same teacher can appear in several parts (e.g. one page per class): add her hours up
+    for(const t of (r&&r.teachers)||[])if(t&&t.name){const name=String(t.name).trim(),key=norm(name);const a=acc[key]||(acc[key]={name,hours:[0,0,0,0,0,0]});
+      [0,1,2,3,4,5].forEach(i=>a.hours[i]+=Math.max(0,Math.round(+((t.hours||[])[i])||0)))}}
+  const found=Object.values(acc).sort((a,b)=>a.name.localeCompare(b.name,"he"));
+  S.review={kind:"schedule",parts:chunks.length,rows:found.map(r=>({...r,match:matchTeacher(r.name)||"new"}))}}
+async function importSick(files){
+  const names=S.teachers.map(t=>t.name).join(", ");const found=[];
+  for(const f of files){const parts=await fileParts(f);
+    const r=await askAI(`אלה אישורי מחלה של מורות (חודש העבודה: ${S.month}). חלץ מכל אישור את שם המורה ואת טווח התאריכים שבהם היא לא כשירה לעבודה.
+רשימת המורות בבית הספר: ${names||"(עדיין ריקה)"}. אם השם תואם מורה מהרשימה, כתוב אותו בדיוק כמו ברשימה.
+החזר JSON בלבד: {"absences":[{"name":"שם","from":"YYYY-MM-DD","to":"YYYY-MM-DD"}]}`,parts);
+    for(const a of (r&&r.absences)||[])if(a&&a.name&&/^\d{4}-\d\d-\d\d$/.test(a.from||""))found.push({name:a.name,from:a.from,to:/^\d{4}-\d\d-\d\d$/.test(a.to||"")?a.to:a.from,file:f.name})}
+  S.review={kind:"sick",rows:found.map(r=>({...r,match:matchTeacher(r.name)}))}}
+async function importCalendar(files){const ranges=[];
+  for(const f of files){const parts=await fileParts(f);
+    const r=await askAI(`זהו לוח החופשות של משרד החינוך (חוזר מנכ"ל) לבתי ספר בישראל. חלץ את כל ימי החופשה של בתי הספר היסודיים בלבד (לא חטיבה עליונה), כולל ערבי חג, חגים, חופשות ארוכות, החופש הגדול וימי בחירות אם מופיעים.
+לכל חופשה: שם קצר, תאריך התחלה ותאריך סיום (יום החופש האחרון, לא יום החזרה ללימודים).
+החזר JSON בלבד: {"ranges":[{"name":"חנוכה","from":"YYYY-MM-DD","to":"YYYY-MM-DD"}]}`,parts);
+    for(const x of (r&&r.ranges)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.from||""))ranges.push({name:String(x.name||"חופשה"),from:x.from,to:/^\d{4}-\d\d-\d\d$/.test(x.to||"")?x.to:x.from})}
+  ranges.sort((a,b)=>a.from.localeCompare(b.from));S.review={kind:"calendar",rows:ranges}}
+async function importTargets(files){const names=S.teachers.map(t=>t.name).join(", ");const found=[];
+  for(const f of files){const parts=await fileParts(f);
+    const r=await askAI(`זו רשימה של מורות ומספר שעות מילוי המקום שכל אחת צריכה לקבל בחודש ${monthLabel(S.month)}.
+רשימת המורות בבית הספר: ${names||"(ריקה)"}. אם השם תואם מורה מהרשימה, כתוב אותו בדיוק כמו ברשימה.
+אם יש בקובץ פירוט לפי תאריכים, סכם לכל מורה את סך השעות בחודש.
+החזר JSON בלבד: {"rows":[{"name":"שם","hours":מספר}]}`,parts);
+    for(const x of (r&&r.rows)||[])if(x&&x.name)found.push({name:String(x.name),hours:Math.max(0,Math.round(+x.hours||0))})}
+  S.review={kind:"targets",rows:found.map(r=>({...r,match:matchTeacher(r.name)}))}}
+async function importQuota(files){const found={};let explain="";
+  for(const f of files){const parts=await fileParts(f);
+    const r=await askAI(`זהו צילום מסך מאתר משרד החינוך עם שעות התקן למילוי מקום, לפי תאריכים (חודש ${monthLabel(S.month)}, ${S.month}).
+לכל תאריך שמופיע החזר שני מספרים:
+1. hours – שעות התקן הפנויות למילוי מקום באותו תאריך (אם מופיעים "נוצל" ו"יתרה", היתרה הפנויה).
+2. absences – מספר השעות שמופיע בשורה של ההעדרויות (שורה שכתוב בה "העדרויות" או "היעדרויות") באותו תאריך. אם אין שורה כזו או התא ריק, כתוב 0.
+אל תכפיל מספר: אם שורת ההעדרויות היא השורה היחידה עם שעות, כתוב את המספר רק ב-absences ו-0 ב-hours.
+תאריך בלי שנה שייך לשנה של החודש הזה. החזר JSON בלבד: {"days":[{"date":"YYYY-MM-DD","hours":מספר,"absences":מספר}],"explain":"משפט קצר מה מצאת בכל שורה"}`,parts);
+    for(const x of (r&&r.days)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.date||""))found[x.date]={hours:Math.max(0,Math.round(+x.hours||0)),abs:Math.max(0,Math.round(+x.absences||0))};
+    if(r?.explain)explain=String(r.explain)}
+  S.review={kind:"quota",explain,rows:Object.keys(found).sort().map(date=>({date,hours:found[date].hours,abs:found[date].abs}))}}
+function datesBetween(a,b){const out=[];let d=new Date(a+"T12:00:00");const e=new Date(b+"T12:00:00");let guard=0;
+  while(d<=e&&guard++<120){out.push(d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()));d.setDate(d.getDate()+1)}return out}
+async function addSick(tid,from,to){
+  const byMonth={};for(const d of datesBetween(from,to)){(byMonth[d.slice(0,7)]??=[]).push(d)}
+  for(const m in byMonth){
+    let md;if(m===S.month)md=S.md;else{const snap=await S.db.doc("months/"+m).get();md=Object.assign(emptyMonth(),snap.exists?clone(snap.data()):{})}
+    const set=new Set(md.sick[tid]||[]);byMonth[m].forEach(d=>set.add(d));md.sick[tid]=[...set].sort();
+    // a sick day can't carry substitution hours
+    for(const d of byMonth[m])if(md.subs[tid]&&md.subs[tid][d]){delete md.subs[tid][d];if(md.locked[tid])delete md.locked[tid][d]}
+    await write("months/"+m,md)}}
+async function applyReview(){const R=S.review;
+  if(R.kind==="schedule"){for(const r of R.rows){if(r.match==="skip")continue;
+      if(r.match==="new"||!r.match){S.teachers.push({id:uid(),name:r.name,hours:r.hours})}
+      else{const t=teacherById(r.match);if(t)t.hours=r.hours}}
+    S.teachers.sort((a,b)=>a.name.localeCompare(b.name,"he"));await saveTeachers();toast("מערכת השעות נשמרה")}
+  if(R.kind==="sick"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;await addSick(r.match,r.from,r.to);n++}toast(n+" אישורי מחלה נשמרו")}
+  if(R.kind==="quota"){let n=0,other=0;S.md.quotaDays=S.md.quotaDays||{};
+    S.md.quotaParts=S.md.quotaParts||{};
+    for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}const tot=(+r.hours||0)+(+r.abs||0);
+      if(tot>0){S.md.quotaDays[r.date]=tot;S.md.quotaParts[r.date]={free:+r.hours||0,abs:+r.abs||0}}else{delete S.md.quotaDays[r.date];delete S.md.quotaParts[r.date]}n++}
+    await saveMonth();toast("התקן עודכן ל-"+n+" ימים"+(other?" ("+other+" תאריכים מחודש אחר לא נשמרו)":""));S.view="home"}
+  if(R.kind==="targets"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;if(+r.hours>0)S.md.targets[r.match]=+r.hours;else delete S.md.targets[r.match];n++}
+    await saveMonth();toast("נשמרו שעות ל-"+n+" מורות");S.view="home"}
+  if(R.kind==="calendar"){const rows=R.rows.filter(r=>r.from&&!r.skip);if(rows.length){S.cal.ranges=rows.map(({name,from,to})=>({name,from,to:to<from?from:to}));S.cal.enabled=true;await saveCal();toast("לוח החופשות עודכן: "+rows.length+" חופשות")}}
+  S.review=null;render()}
+
+/* ---------- export ---------- */
+function reportRows(){const rows=[];for(const t of S.teachers)for(const day of monthDays(S.month)){const h=subOf(t.id,day.date);
+  if(h)rows.push({"שם המורה":t.name,"תאריך":day.date.split("-").reverse().join("/"),"יום":DAYS[day.wd],"שעות מילוי מקום":h})}return rows}
+async function exportExcel(){try{await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+  const ws=XLSX.utils.json_to_sheet(reportRows());ws["!cols"]=[{wch:20},{wch:12},{wch:8},{wch:16}];const wb=XLSX.utils.book_new();
+  wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,"דיווח");
+  const buf=XLSX.write(wb,{type:"array",bookType:"xlsx"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  a.download="מילוי-מקום-"+S.month+".xlsx";document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+  catch(e){if(e?.code!=="declined"&&e?.code!=="cancelled")toast("ההורדה לא הושלמה")}}
+async function copyText(txt){try{await navigator.clipboard.writeText(txt);toast("הועתק")}catch(e){
+  const ta=document.createElement("textarea");ta.value=txt;document.body.append(ta);ta.select();toast("סמני והעתיקי (Ctrl+C)");setTimeout(()=>ta.remove(),8000)}}
+
+/* ---------- views ---------- */
+const ROLES={pending:"ממתינה לאישור",viewer:"צפייה בלבד",editor:"עורכת",admin:"מנהלת ראשית",blocked:"חסומה"};
+function renderTabs(){const n=document.getElementById("tabs"),w=document.getElementById("who");
+  w.innerHTML=S.session?`<span>${esc(S.profile?.full_name||S.session.user.email)}${S.role?" · "+ROLES[S.role]:""}</span><button data-act="logout">יציאה</button>`:"";
+  if(!S.allowed){n.innerHTML="";return}
+  const pend=(S.users||[]).filter(u=>u.role==="pending").length;
+  const tabs=[["home","סיכום החודש"],["teachers","מורות"]];if(S.canEdit)tabs.push(["import",S.sample?"העלאת קבצים":"הזנת נתונים"]);tabs.push(["settings","הגדרות"]);if(S.isAdmin)tabs.push(["users","משתמשים"]);
+  n.innerHTML=tabs.map(([k,l])=>`<button data-tab="${k}" aria-current="${S.view===k||(k==="teachers"&&S.view==="teacher")}">${l}${k==="users"&&pend?`<span class="badge">${pend}</span>`:""}</button>`).join("")}
+function render(){document.getElementById("mLabel").textContent=monthLabel(S.month);renderTabs();
+  document.querySelector(".month").hidden=!S.allowed;
+  if(!S.session||S.auth==="newpass"){app.innerHTML=vAuth();return}
+  if(!S.profile){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
+  if(!S.allowed){app.innerHTML=`<div class="center"><div class="card" style="max-width:460px"><h2>${S.role==="blocked"?"הגישה שלך נחסמה":"ההרשמה התקבלה"}</h2><p class="muted">${S.role==="blocked"?"פני למנהלת המערכת.":"מנהלת המערכת צריכה לאשר אותך. אחרי האישור תוכלי להיכנס."}</p><div class="row"><button class="btn" data-act="recheck">בדיקה אם אושרתי</button></div></div></div>`;return}
+  if(!S.md){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
+  const v={home:vHome,teachers:vTeachers,teacher:vTeacher,import:vImport,settings:vSettings,users:vUsers}[S.view]||vHome;
+  const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
+
+function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תקן מילוי מקום לפי ימים</h2>${S.sample?`<button class="btn" data-tab="import">העלאת צילום מסך</button>`:""}</div>
+  <p class="muted">לכל יום: כמה שעות פנויות יש בתקן לפי אתר משרד החינוך. מתחת למספר רואים כמה כבר שובצו.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){const open=dayOpen(day),q=+(S.md.quotaDays||{})[day.date]||0,u=daySubs(day.date);
+    const cls=!open?"off":u>q&&hasDayQuota()?"over":q&&u===q?"full":"";
+    h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>${q?`<div class="meta">תקן ${q}</div>`:""}`:`<input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="תקן ${day.d}">${(S.md.quotaParts||{})[day.date]?.abs?`<div class="meta">תקן ${S.md.quotaParts[day.date].free} + העדרויות ${S.md.quotaParts[day.date].abs}</div>`:""}<div class="meta">שובצו <b>${u}</b></div>`;
+    h+=`</div>`}
+  return h+`</div></div>`}
+function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
+  const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
+  const sickCount=Object.entries(S.md.sick).filter(([k,v])=>teacherById(k)&&v.some(d=>d.startsWith(S.month))).length;
+  let h=`<div class="row" style="justify-content:space-between"><div><h1>${monthLabel(S.month)}</h1><p class="muted">כמה שעות מילוי מקום אפשר לדווח לכל מורה, ובאיזה יום.</p></div>
+  <div class="row"><button class="btn primary" data-act="plan" ${!S.teachers.length?"disabled":""}>תכנון אוטומטי</button>
+  <button class="btn" data-act="export" ${!used?"disabled":""}>הורדה לאקסל</button></div></div>`;
+  if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
+  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (סכום הימים)</div></div>
+  <div class="kpi hl"><div class="n">${used}</div><div class="l">שעות משובצות לדיווח</div></div>
+  <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
+  <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
+  <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,used/q*100):0}%"></i></div>`;
+  if(!S.teachers.length)h+=`<div class="card"><h2>מתחילים</h2><p>1. העלי את קובץ מערכת השעות בלשונית <b>העלאת קבצים</b> (או הוסיפי מורות ידנית בלשונית <b>מורות</b>).</p><p>2. העלי צילום מסך של שעות התקן לפי ימים ואת אישורי המחלה של החודש.</p><p>3. לחצי <b>תכנון אוטומטי</b>. המערכת תחלק את שעות התקן בין המורות.</p><div class="row"><button class="btn primary" data-tab="import">להעלאת קבצים</button></div></div>`;
+  if(!q&&S.teachers.length)h+=`<div class="note">עדיין לא הוזן תקן לימים של החודש. הקלידי בלוח למטה כמה שעות פנויות יש בכל יום, או או העלי צילום מסך.</div>`;
+  if(calDays)h+=`<p class="muted" style="font-size:14px">לפי לוח החופשות של משרד החינוך יש ב${monthLabel(S.month)} ${calDays} ימי חופש, ולא ישובץ בהם מילוי מקום.</p>`;
+  if(probs.length)h+=`<div class="note bad"><b>${probs.length} בעיות בדיווח:</b><br>${probs.slice(0,10).map(esc).join("<br>")}</div>`;
+  if(S.teachers.length)h+=vQuotaGrid();
+  const sumT=S.teachers.reduce((a,t)=>a+(+S.md.targets[t.id]||0),0);
+  if(S.teachers.length)h+=`<div class="card" style="gap:6px"><h2>כמה שעות כל מורה צריכה לקבל החודש</h2><p class="muted">הקלידי בעמודה "צריכה לקבל" (או העלי קובץ בלשונית העלאת קבצים), ואז לחצי <b>תכנון אוטומטי</b>. המערכת תמצא לכל מורה באילו ימים לדווח. מורה בלי מספר לא תקבל שעות, אלא אם לא הזנת מספרים לאף מורה, ואז התקן מתחלק שווה.</p>
+    ${sumT?`<p>סך השעות שהזנת: <b>${sumT}</b>${q?` מתוך תקן של <b>${q}</b>`:""}</p>`:""}${q&&sumT>q?`<div class="note bad">הזנת ${sumT-q} שעות יותר מהתקן. התכנון יעצור כשהתקן ייגמר.</div>`:""}</div>`;
+  if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה</th><th>מקום פנוי בחודש</th><th>מצב</th></tr></thead><tbody>`;
+    for(const t of S.teachers){const s=teacherSubs(t.id),days=Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length,sick=(S.md.sick[t.id]||[]).length,tg=+S.md.targets[t.id]||0;
+      const room=monthCapacity(t);
+      const st=tg?(s>=tg?`<span class="pill ok">שובצו כל השעות</span>`:room+s<tg?`<span class="pill bad">אין מספיק מקום · חסרות ${tg-s}</span>`:`<span class="pill warn">חסרות ${tg-s}</span>`):s?`<span class="pill ok">שובץ</span>`:`<span class="pill">לא הוזן</span>`;
+      h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick}</span>`:"–"}</td><td>${room}</td><td>${st}</td></tr>`}
+    h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: עד ${S.school.maxDaily} שעות ביום כולל המערכת, לא בימי מחלה, ${S.school.onlyTeachingDays?"רק בימים שהמורה מלמדת,":""} ובסך הכל לא יותר מהתקן.</p>`}
+  return h}
+
+function vTeachers(){let h=`<div class="row" style="justify-content:space-between"><div><h1>מורות ומערכת שעות</h1><p class="muted">מספר שעות ההוראה בכל יום. המספרים נשמרים מיד.</p></div></div>
+  <div class="card"><div class="row"><input id="newName" placeholder="שם מורה חדשה" style="flex:1;min-width:180px"><button class="btn primary" data-act="add-teacher">הוספה</button></div></div>`;
+  if(!S.teachers.length)return h+`<p class="muted">אין עדיין מורות. הוסיפי ידנית או העלי קובץ מערכת.</p>`;
+  h+=`<div class="tbl"><table><thead><tr><th>מורה</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}<th></th></tr></thead><tbody>`;
+  for(const t of S.teachers){h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:5px 10px">${esc(t.name)}</button></td>`+
+    [0,1,2,3,4,5].map(i=>`<td><input type="number" min="0" max="12" id="h-${t.id}-${i}" data-hours="${t.id}" data-i="${i}" value="${sched(t,i)||""}" placeholder="0" aria-label="${esc(t.name)} יום ${DAYS[i]}"></td>`).join("")+
+    `<td>${S.confirm==="del-"+t.id?`<span class="confirm"><button class="btn danger" data-act="del-yes" data-id="${t.id}">מחיקה</button><button class="btn" data-act="cancel">לא</button></span>`:`<button class="btn danger" data-act="del" data-id="${t.id}" style="padding:5px 10px">הסרה</button>`}</td></tr>`}
+  return h+`</tbody></table></div>`}
+
+function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";return vTeachers()}
+  const days=monthDays(S.month).filter(d=>d.wd!==6);const s=teacherSubs(t.id);const sick=(S.md.sick[t.id]||[]).filter(d=>d.startsWith(S.month));
+  const capTotal=days.reduce((a,d)=>a+capacity(t,d),0);const tg=+S.md.targets[t.id]||0;
+  let h=`<div class="row"><button class="btn" data-tab="home">→ חזרה לסיכום</button></div>
+  <div class="row" style="justify-content:space-between;align-items:flex-end"><div><h1>${esc(t.name)}</h1><p class="muted">${monthLabel(S.month)} · מערכת: ${[0,1,2,3,4,5].map(i=>DAYS[i].slice(0,1)+"׳ "+sched(t,i)).join(" · ")}</p></div>
+  <div class="row" style="align-items:flex-end"><label class="f">שעות שצריכה לקבל החודש<input type="number" min="0" id="target" value="${tg||""}" placeholder="–"></label>
+  <button class="btn primary" data-act="plan-one" ${tg?"":"disabled"}>שבצי לה את השעות</button></div></div>
+  ${tg&&tg>capTotal+s?`<div class="note bad">ל${esc(t.name)} יש מקום פנוי ל-${capTotal+s} שעות בלבד החודש (לפי המערכת, ימי מחלה וחופשות). אי אפשר לשבץ את כל ${tg} השעות.</div>`:tg&&s<tg?`<div class="note">שובצו ${s} מתוך ${tg} שעות. לחצי "שבצי לה את השעות" כדי להשלים.</div>`:tg&&s>=tg?`<div class="note ok">כל ${tg} השעות שובצו.</div>`:""}
+  <div class="kpis"><div class="kpi hl"><div class="n">${s}</div><div class="l">שעות מילוי מקום לדיווח</div></div>
+  <div class="kpi"><div class="n">${Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length}</div><div class="l">ימים עם דיווח</div></div>
+  <div class="kpi"><div class="n">${sick.length}</div><div class="l">ימי מחלה</div></div>
+  <div class="kpi"><div class="n">${capTotal}</div><div class="l">שעות פנויות אפשריות בחודש</div></div></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החודש</h2><span class="muted" style="font-size:14px">הקלידי שעות בתא כדי לקבע אותן ידנית · "מחלה" מסמן יום מחלה</span></div><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){
+    const open=dayOpen(day),sk=isSick(t.id,day.date),c=capacity(t,day),v=subOf(t.id,day.date),lk=(S.md.locked[t.id]||{})[day.date];
+    const cls=!open?"off":sk?"sick":v?"has":"";
+    h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
+    if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
+    else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
+      h+=`<div class="meta">מערכת ${sched(t,day.wd)} · פנוי לה ${c}${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
+      h+=sk?`<div class="meta" style="color:var(--sick)">לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
+    h+=`</div>`}
+  h+=`</div></div>`;
+  const lines=days.filter(d=>subOf(t.id,d.date)).map(d=>`${fmtDate(d.date)} (${DAYS[d.wd]}) – ${subOf(t.id,d.date)} שעות`);
+  h+=`<div class="card"><div class="row" style="justify-content:space-between"><h2>מה לדווח</h2>${lines.length?`<button class="btn" data-act="copy-teacher">העתקה</button>`:""}</div>
+  ${lines.length?`<div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>שעות</th><th>במערכת</th><th>סה״כ ביום</th></tr></thead><tbody>${days.filter(d=>subOf(t.id,d.date)).map(d=>`<tr><td>${fmtDate(d.date)}</td><td>${DAYS[d.wd]}</td><td><b>${subOf(t.id,d.date)}</b></td><td>${sched(t,d.wd)}</td><td>${sched(t,d.wd)+subOf(t.id,d.date)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">אין עדיין שעות לדיווח. לחצי "תכנון אוטומטי" במסך הסיכום או הקלידי שעות בלוח.</p>`}</div>`;
+  return h}
+
+function busyLine(k){const b=S.busy[k];return b?`<p class="muted"><span class="spin"></span> ${esc(b)}</p>`:""}
+function vImport(){if(S.review)return vReview();
+  const opts=S.teachers.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  return `<div><h1>${S.sample?"העלאת קבצים":"הזנת נתונים"}</h1>${S.sample?`<p class="muted">המערכת קוראת את הקבצים בעצמה ומציגה לך לבדיקה לפני שמירה.</p>`:""}</div>
+  ${S.sample?"":`<div class="card"><h2>איפה מזינים כל דבר</h2>
+   <p><b>מערכת שעות:</b> בלשונית <button class="linkbtn" data-tab="teachers">מורות</button>, שעות כיתה לכל יום.</p>
+   <p><b>תקן לפי ימים</b> ו<b>שעות לכל מורה:</b> במסך <button class="linkbtn" data-tab="home">סיכום החודש</button>.</p>
+   <p><b>ימי מחלה:</b> כאן למטה, או בלחיצה על "מחלה" בלוח של המורה.</p>
+   <p><b>חופשות:</b> בלשונית <button class="linkbtn" data-tab="settings">הגדרות</button>.</p></div>`}
+  <div class="grid" ${S.sample?"":"hidden"}>
+   <div class="card"><h2>מערכת שעות</h2><p class="muted">קובץ המערכות של המורות. אפשר להעלות כמה קבצים.</p>
+    <label class="drop">בחירת קובץ<input type="file" multiple data-up="schedule" accept=".xlsx,.xls,.csv,.pdf,image/*"></label>${busyLine("schedule")}</div>
+   <div class="card"><h2>אישורי מחלה</h2><p class="muted">כל האישורים שהגיעו החודש. אפשר לבחור כמה בבת אחת.</p>
+    <label class="drop">בחירת קבצים<input type="file" multiple data-up="sick" accept=".pdf,image/*,.xlsx,.csv"></label>${busyLine("sick")}</div>
+   <div class="card"><h2>שעות לכל מורה</h2><p class="muted">רשימה של כמה שעות מילוי מקום כל מורה צריכה לקבל ב${monthLabel(S.month)}.</p>
+    <label class="drop">בחירת קובץ<input type="file" multiple data-up="targets" accept=".xlsx,.xls,.csv,.pdf,image/*"></label>${busyLine("targets")}</div>
+   <div class="card"><h2>תקן מילוי מקום לפי ימים</h2><p class="muted">צילום מסך מאתר משרד החינוך של השעות הפנויות בכל תאריך ב${monthLabel(S.month)}. אפשר כמה צילומים. כרגע: <b>${quotaTotal()}</b> שעות.</p>
+    <label class="drop">בחירת צילום מסך<input type="file" multiple data-up="quota" accept="image/*,.pdf"></label>${busyLine("quota")}</div>
+  </div>
+  <div class="card"><h2>הזנה ידנית של מחלה</h2><div class="row">
+   <label class="f">מורה<select id="mSickT"><option value="">בחרי…</option>${opts}</select></label>
+   <label class="f">מתאריך<input type="date" id="mSickF"></label><label class="f">עד תאריך<input type="date" id="mSickTo"></label>
+   <button class="btn primary" data-act="manual-sick" style="align-self:flex-end">שמירה</button></div></div>
+  <p class="muted">הזנה ידנית של התקן לכל יום נמצאת במסך <b>סיכום החודש</b>.</p>`}
+
+function vReview(){const R=S.review;const opts=(sel,extra)=>extra+S.teachers.map(t=>`<option value="${t.id}" ${sel===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
+  let h=`<div><h1>בדיקה לפני שמירה</h1><p class="muted">זה מה שהמערכת מצאה בקבצים. אפשר לתקן ואז לשמור.</p></div>`;
+  if(R.kind==="targets"){if(!R.rows.length)h+=`<div class="note">לא נמצאו נתונים בקובץ.</div>`;
+    else h+=`<div class="tbl"><table><thead><tr><th>שם בקובץ</th><th>מורה</th><th>שעות</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td>${esc(r.name)}</td><td><select data-rmatch="${i}">${opts(r.match,`<option value="" ${!r.match?"selected":""}>לא זוהתה – בחרי</option><option value="skip">לדלג</option>`)}</select></td><td><input type="number" min="0" data-rd="${i}" data-k="hours" value="${r.hours}"></td></tr>`).join("")+`</tbody></table></div>`}
+  else if(R.kind==="calendar"){if(!R.rows.length)h+=`<div class="note">לא נמצאו חופשות בקובץ.</div>`;
+    else h+=`<div class="note">הלוח החדש יחליף את הלוח הקיים.</div><div class="tbl"><table><thead><tr><th>חופשה</th><th>מתאריך</th><th>עד (כולל)</th><th></th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input data-rd="${i}" data-k="name" value="${esc(r.name)}"></td><td><input type="date" data-rd="${i}" data-k="from" value="${r.from}"></td><td><input type="date" data-rd="${i}" data-k="to" value="${r.to}"></td><td><label class="row" style="gap:4px"><input type="checkbox" data-rskip="${i}" ${r.skip?"checked":""}> לדלג</label></td></tr>`).join("")+`</tbody></table></div>`}
+  else if(R.kind==="quota"){h+=R.explain?`<p class="muted">${esc(R.explain)}</p>`:"";
+    if(!R.rows.length)h+=`<div class="note">לא נמצאו תאריכים בצילום. אפשר להקליד את התקן לכל יום במסך הסיכום.</div>`;
+    else h+=`<div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>שעות פנויות בתקן</th><th>שעות העדרויות</th><th>סה״כ לדיווח</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input type="date" data-rd="${i}" data-k="date" value="${r.date}"></td><td>${DAYS[new Date(r.date+"T12:00:00").getDay()]||"שבת"}</td><td><input type="number" min="0" data-rd="${i}" data-k="hours" value="${r.hours}"></td><td><input type="number" min="0" data-rd="${i}" data-k="abs" value="${r.abs||0}"></td><td><b>${(+r.hours||0)+(+r.abs||0)}</b></td></tr>`).join("")+`</tbody></table></div><p class="muted" style="font-size:14px">התקן של כל יום יהיה הסכום של שתי העמודות. הסכום מתעדכן אחרי השמירה.</p>`}
+  else if(!R.rows.length){h+=`<div class="note">לא נמצאו נתונים בקובץ. נסי קובץ ברור יותר או הזיני ידנית.</div>`}
+  else if(R.kind==="schedule"){h+=`<p><b>נמצאו ${R.rows.length} מורות</b>${R.parts>1?` (הקובץ נקרא ב-${R.parts} חלקים)`:""}. בדקי שהימים נכונים, במיוחד חמישי ושישי.</p><div class="tbl"><table><thead><tr><th>שם בקובץ</th><th>שיוך</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>`+
+    R.rows.map((r,i)=>`<tr><td>${esc(r.name)}</td><td><select data-rmatch="${i}">${opts(r.match,`<option value="new" ${r.match==="new"?"selected":""}>מורה חדשה</option><option value="skip" ${r.match==="skip"?"selected":""}>לדלג</option>`)}</select></td>`+
+      r.hours.map((x,j)=>`<td><input type="number" min="0" data-rh="${i}" data-j="${j}" value="${x}"></td>`).join("")+`</tr>`).join("")+`</tbody></table></div>`}
+  else{h+=`<div class="tbl"><table><thead><tr><th>שם באישור</th><th>מורה</th><th>מתאריך</th><th>עד</th><th>קובץ</th></tr></thead><tbody>`+
+    R.rows.map((r,i)=>`<tr><td>${esc(r.name)}</td><td><select data-rmatch="${i}">${opts(r.match,`<option value="" ${!r.match?"selected":""}>לא זוהתה – בחרי</option><option value="skip">לדלג</option>`)}</select></td>
+      <td><input type="date" data-rd="${i}" data-k="from" value="${r.from}"></td><td><input type="date" data-rd="${i}" data-k="to" value="${r.to}"></td><td class="muted">${esc(r.file)}</td></tr>`).join("")+`</tbody></table></div>`;
+    if(R.rows.some(r=>!r.match))h+=`<div class="note">יש אישורים שלא שויכו למורה. בחרי מורה או "לדלג", אחרת הם לא יישמרו.</div>`}
+  return h+`<div class="row"><button class="btn primary" data-act="review-save">שמירה</button><button class="btn" data-act="review-cancel">ביטול</button></div>`}
+
+let adminSearch=[];
+function vSettings(){const hol=S.md.holidays.filter(d=>d.startsWith(S.month)).sort();
+  let h=`<h1>הגדרות</h1>
+  <div class="card"><h2>כללי תכנון</h2><div class="row">
+   <label class="f">מקסימום שעות ביום למורה (כולל מערכת)<input type="number" min="1" max="12" id="maxDaily" value="${S.school.maxDaily}"></label>
+   <label class="row" style="gap:6px;align-self:flex-end"><input type="checkbox" id="onlyTD" ${S.school.onlyTeachingDays?"checked":""}> לשבץ רק בימים שהמורה מלמדת</label></div></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החופשות של משרד החינוך (יסודי)</h2>
+   <label class="row" style="gap:6px"><input type="checkbox" id="calOn" ${S.cal.enabled?"checked":""}> פעיל</label></div>
+   <p class="muted">${esc(S.cal.title||"")} · בימי החופשה לא ישובץ מילוי מקום. אפשר להוסיף ולהסיר חופשות, והשינוי נשמר לכל המשתמשות.</p>
+   ${S.sample?`<label class="drop">עדכון מחוזר מנכ"ל<input type="file" data-up="calendar" accept=".pdf,image/*,.xlsx,.csv"></label>${busyLine("calendar")}`:""}
+   ${(S.cal.ranges||[]).length?`<div class="tbl"><table><thead><tr><th>חופשה</th><th>מתאריך</th><th>עד (כולל)</th><th></th></tr></thead><tbody>${S.cal.ranges.map((r,i)=>`<tr><td>${esc(r.name)}</td><td>${fmtDate(r.from)}.${r.from.slice(2,4)}</td><td>${fmtDate(r.to||r.from)}.${(r.to||r.from).slice(2,4)}</td><td><button class="btn danger" data-delrange="${i}" style="padding:3px 10px">הסרה</button></td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">הלוח ריק.</p>`}
+   <div class="row"><input id="rgName" placeholder="שם החופשה" style="width:140px"><input type="date" id="rgFrom" aria-label="מתאריך"><input type="date" id="rgTo" aria-label="עד תאריך"><button class="btn" data-act="add-range">הוספה ללוח</button></div></div>
+  <div class="card"><h2>ימי חופש נוספים של בית הספר ב${monthLabel(S.month)}</h2><p class="muted">ימים שבית הספר סגור בהם מעבר ללוח של משרד החינוך.</p>
+   <div class="row">${hol.map(d=>`<span class="chip">${fmtDate(d)}<button data-delhol="${d}" aria-label="הסרה">×</button></span>`).join("")||`<span class="muted">אין</span>`}</div>
+   <div class="row"><input type="date" id="holDate" min="${S.month}-01" max="${S.month}-31"><button class="btn" data-act="add-hol">הוספה</button></div></div>`;
+  return h+`<div class="card"><h2>מחיקת נתוני החודש</h2>${S.confirm==="wipe"?`<div class="confirm"><span>למחוק תקן, מחלות ושיבוצים של ${monthLabel(S.month)}?</span><button class="btn danger" data-act="wipe-yes">מחיקה</button><button class="btn" data-act="cancel">ביטול</button></div>`:`<div class="row"><button class="btn danger" data-act="wipe">ניקוי ${monthLabel(S.month)}</button></div>`}</div>`}
+function vAuth(){const m=S.auth,msg=S.authMsg?`<div class="note ${S.authOk?"ok":"bad"}">${esc(S.authMsg)}</div>`:"";
+  const head={login:"כניסה למערכת",signup:"הרשמה",forgot:"איפוס סיסמה",newpass:"סיסמה חדשה"}[m];
+  let f="";
+  if(m==="signup")f+=`<label class="f">שם מלא<input id="aName" autocomplete="name" required></label>`;
+  if(m!=="newpass")f+=`<label class="f">מייל<input id="aEmail" type="email" autocomplete="email" dir="ltr" required></label>`;
+  if(m!=="forgot")f+=`<label class="f">${m==="newpass"?"סיסמה חדשה":"סיסמה"}${m!=="login"?" (לפחות 8 תווים)":""}<input id="aPass" type="password" autocomplete="${m==="login"?"current-password":"new-password"}" dir="ltr" required></label>`;
+  const btn={login:"כניסה",signup:"הרשמה",forgot:"שליחת קישור לאיפוס",newpass:"שמירת הסיסמה"}[m];
+  let links="";
+  if(m==="login")links=`<button type="button" class="linkbtn" data-auth="signup">אין לך משתמש? הרשמה</button><button type="button" class="linkbtn" data-auth="forgot">שכחתי סיסמה</button>`;
+  else if(m!=="newpass")links=`<button type="button" class="linkbtn" data-auth="login">חזרה לכניסה</button>`;
+  return `<div class="auth card"><h1>${head}</h1><p class="muted">מערכת לניהול שעות מילוי מקום.${m==="signup"?" אחרי ההרשמה מנהלת המערכת תאשר אותך.":""}</p>${msg}
+  <form id="authForm" data-mode="${m}">${f}<button class="btn primary" type="submit" id="authBtn">${btn}</button></form><div class="row" style="justify-content:space-between">${links}</div></div>`}
+const AUTH_ERR=e=>{const t=String(e?.message||e||"");
+  if(/Invalid login/i.test(t))return "המייל או הסיסמה לא נכונים.";
+  if(/not confirmed/i.test(t))return "צריך קודם לאשר את המייל: לחצי על הקישור שנשלח אלייך.";
+  if(/already registered|already been registered/i.test(t))return "המייל הזה כבר רשום. נסי להיכנס או לאפס סיסמה.";
+  if(/at least|weak|short/i.test(t))return "הסיסמה קצרה מדי. צריך לפחות 8 תווים.";
+  if(/rate limit|security purposes/i.test(t))return "יותר מדי ניסיונות. חכי דקה ונסי שוב.";
+  if(/fetch|network/i.test(t))return "אין חיבור לשרת. בדקי אינטרנט ונסי שוב.";
+  return "משהו לא הצליח: "+t};
+async function submitAuth(form){const m=form.dataset.mode,v=id=>(document.getElementById(id)?.value||"").trim();const btn=document.getElementById("authBtn");
+  btn.disabled=true;S.authMsg="";S.authOk=false;const here=location.origin+location.pathname;
+  try{
+    if(m==="login"){const {error}=await sb.auth.signInWithPassword({email:v("aEmail"),password:document.getElementById("aPass").value});if(error)throw error}
+    if(m==="signup"){const p=document.getElementById("aPass").value;if(p.length<8)throw new Error("short");
+      const {data,error}=await sb.auth.signUp({email:v("aEmail"),password:p,options:{data:{full_name:v("aName")},emailRedirectTo:here}});if(error)throw error;
+      if(!data.session){S.auth="login";S.authOk=true;S.authMsg="נשלח אלייך מייל אימות. לחצי על הקישור שבו, ואז היכנסי כאן."}}
+    if(m==="forgot"){const {error}=await sb.auth.resetPasswordForEmail(v("aEmail"),{redirectTo:here});if(error)throw error;S.authOk=true;S.authMsg="אם המייל רשום, נשלח אליו קישור לאיפוס הסיסמה."}
+    if(m==="newpass"){const p=document.getElementById("aPass").value;if(p.length<8)throw new Error("short");const {error}=await sb.auth.updateUser({password:p});if(error)throw error;
+      S.auth="login";toast("הסיסמה עודכנה")}
+  }catch(e){S.authMsg=AUTH_ERR(e)}
+  render()}
+async function loadUsers(){if(!S.isAdmin)return;const {data,error}=await sb.from("profiles").select("*").order("created_at");
+  if(!error){S.users=data;renderTabs();if(S.view==="users"&&!isTyping())render()}}
+function vUsers(){if(!S.isAdmin)return vHome();const us=S.users;
+  let h=`<div class="row" style="justify-content:space-between"><div><h1>משתמשים והרשאות</h1><p class="muted">כל מי שנרשמת מופיעה כאן. קבעי לה הרשאה כדי שתוכל להיכנס.</p></div><button class="btn" data-act="users-refresh">רענון</button></div>
+  <div class="card" style="gap:6px"><p><b>מנהלת ראשית</b>: הכל, כולל ניהול משתמשים · <b>עורכת</b>: מזינה נתונים ומתכננת · <b>צפייה בלבד</b>: רואה ולא משנה · <b>חסומה</b>: לא יכולה להיכנס</p>
+  <p class="muted">כתובת הכניסה לשלוח למשתמשות: <b dir="ltr">${esc(location.origin+location.pathname)}</b> <button class="btn" data-act="copy-link" style="padding:3px 10px">העתקה</button></p></div>`;
+  if(!us)return h+`<div class="center" style="min-height:20vh"><div class="spin"></div></div>`;
+  h+=`<div class="tbl"><table><thead><tr><th>שם</th><th>מייל</th><th>נרשמה</th><th>הרשאה</th></tr></thead><tbody>`;
+  for(const u of us){const me=u.id===S.uid;
+    h+=`<tr${u.role==="pending"?` style="background:var(--warn-soft)"`:""}><td><b>${esc(u.full_name||"–")}</b>${me?" (את)":""}</td><td dir="ltr" style="text-align:right">${esc(u.email)}</td><td>${u.created_at?new Date(u.created_at).toLocaleDateString("he-IL"):""}</td>
+    <td><select data-role="${u.id}" ${me?"disabled":""} aria-label="הרשאה">${Object.entries(ROLES).map(([k,l])=>`<option value="${k}" ${u.role===k?"selected":""}>${l}</option>`).join("")}</select></td></tr>`}
+  return h+`</tbody></table></div>`}
+
+/* ---------- events ---------- */
+document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;const d=b.dataset;
+  if(d.auth){S.auth=d.auth;S.authMsg="";render();return}
+  if(d.tab){S.view=d.tab;S.confirm=null;render();window.scrollTo(0,0);if(d.tab==="users")loadUsers();return}
+  if(d.teacher){S.teacher=d.teacher;S.view="teacher";S.confirm=null;render();window.scrollTo(0,0);return}
+  if(d.sick){const tid=S.teacher;const set=new Set(S.md.sick[tid]||[]);if(set.has(d.sick))set.delete(d.sick);else{set.add(d.sick);
+      if(S.md.subs[tid])delete S.md.subs[tid][d.sick];if(S.md.locked[tid])delete S.md.locked[tid][d.sick]}
+    S.md.sick[tid]=[...set].sort();render();saveMonth();return}
+  if(d.delrange!==undefined){S.cal.ranges=S.cal.ranges.filter((_,i)=>i!==+d.delrange);render();await saveCal();return}
+  if(d.delhol){S.md.holidays=S.md.holidays.filter(x=>x!==d.delhol);render();saveMonth();return}
+  switch(d.act){
+    case "logout":await sb.auth.signOut();return;
+    case "recheck":await loadProfile();render();return;
+    case "users-refresh":S.users=null;render();await loadUsers();return;
+    case "copy-link":return copyText(location.origin+location.pathname);
+    case "plan":if(Object.keys(S.md.subs).length&&S.confirm!=="replan"){S.confirm="replan";render();return}
+    case "plan-one":{const t=teacherById(S.teacher);const r=planTeacher(t);render();await saveMonth();
+      toast(r.missing?(r.byQuota?"שובצו "+r.placed+". אין מספיק תקן בימים הפנויים שלה, חסרות "+r.missing:"שובצו "+r.placed+". אין מספיק ימים פנויים, חסרות "+r.missing):"שובצו "+r.placed+" שעות");return}
+    case "plan-yes":{S.confirm=null;if(!hasDayQuota()&&!S.teachers.some(t=>+S.md.targets[t.id]>0)){toast("הזיני תקן לפי ימים או כמה שעות כל מורה צריכה לקבל");render();return}
+      const r=runPlan();render();await saveMonth();
+      toast(r.short.length?"שובץ. ל-"+r.short.length+" מורות אין מספיק ימים פנויים ליעד":r.left>0?"שובץ. נשארו "+r.left+" שעות בתקן בימים שאין בהם מורה פנויה":"התכנון הושלם");return}
+    case "cancel":S.confirm=null;render();return;
+    case "export":return exportExcel();
+    case "add-teacher":{const el=document.getElementById("newName");const n=el.value.trim();if(!n)return;S.teachers.push({id:uid(),name:n,hours:[0,0,0,0,0,0]});
+      S.teachers.sort((a,b)=>a.name.localeCompare(b.name,"he"));render();await saveTeachers();toast("נוספה "+n);return}
+    case "del":S.confirm="del-"+d.id;render();return;
+    case "del-yes":S.teachers=S.teachers.filter(t=>t.id!==d.id);S.confirm=null;render();await saveTeachers();return;
+    case "copy-teacher":{const t=teacherById(S.teacher);const lines=monthDays(S.month).filter(x=>subOf(t.id,x.date)).map(x=>`${fmtDate(x.date)} (${DAYS[x.wd]}) – ${subOf(t.id,x.date)} שעות`);
+      return copyText(t.name+" – מילוי מקום "+monthLabel(S.month)+"\n"+lines.join("\n")+"\nסה״כ: "+teacherSubs(t.id)+" שעות")}
+    case "manual-sick":{const t=document.getElementById("mSickT").value,f=document.getElementById("mSickF").value,to=document.getElementById("mSickTo").value||f;
+      if(!t||!f)return toast("בחרי מורה ותאריך");if(to<f)return toast("תאריך הסיום לפני תאריך ההתחלה");await addSick(t,f,to);render();toast("יום המחלה נשמר");return}
+    case "review-save":{b.disabled=true;await applyReview();return}
+    case "review-cancel":S.review=null;render();return;
+    case "add-hol":{const v=document.getElementById("holDate").value;if(!v)return;if(!v.startsWith(S.month))return toast("בחרי תאריך בחודש הנוכחי");
+      S.md.holidays=[...new Set([...S.md.holidays,v])];for(const tid in S.md.subs){delete S.md.subs[tid][v]}render();await saveMonth();return}
+    case "add-range":{const n=document.getElementById("rgName").value.trim()||"חופשה",f=document.getElementById("rgFrom").value,t=document.getElementById("rgTo").value||f;
+      if(!f)return toast("בחרי תאריך");if(t<f)return toast("תאריך הסיום לפני ההתחלה");S.cal.ranges=[...(S.cal.ranges||[]),{name:n,from:f,to:t}].sort((a,b)=>a.from.localeCompare(b.from));render();await saveCal();return}
+    case "wipe":S.confirm="wipe";render();return;
+    case "wipe-yes":S.md=emptyMonth();S.confirm=null;render();await saveMonth();toast("נתוני החודש נמחקו");return}
+});
+let tm={};function debounce(k,fn,ms=500){clearTimeout(tm[k]);tm[k]=setTimeout(fn,ms)}
+document.addEventListener("input",e=>{const el=e.target,d=el.dataset;
+  if(d.hours){const t=teacherById(d.hours);t.hours=t.hours||[0,0,0,0,0,0];t.hours[+d.i]=Math.max(0,+el.value||0);debounce("teachers",saveTeachers);return}
+  if(d.sub){const tid=S.teacher,v=Math.max(0,Math.round(+el.value||0));S.md.subs[tid]=S.md.subs[tid]||{};S.md.locked[tid]=S.md.locked[tid]||{};
+    if(v){S.md.subs[tid][d.sub]=v;S.md.locked[tid][d.sub]=true}else{delete S.md.subs[tid][d.sub];delete S.md.locked[tid][d.sub]}
+    debounce("month",()=>{saveMonth();render()},700);return}
+  if(d.qday){const v=Math.max(0,Math.round(+el.value||0));S.md.quotaDays=S.md.quotaDays||{};if(v)S.md.quotaDays[d.qday]=v;else delete S.md.quotaDays[d.qday];if(S.md.quotaParts)delete S.md.quotaParts[d.qday];debounce("month",()=>{saveMonth();render()},800);return}
+  if(d.target){const v=Math.max(0,+el.value||0);if(v)S.md.targets[d.target]=v;else delete S.md.targets[d.target];debounce("month",()=>{saveMonth();render()},800);return}
+  if(el.id==="target"){const v=Math.max(0,+el.value||0);if(v)S.md.targets[S.teacher]=v;else delete S.md.targets[S.teacher];debounce("month",()=>{saveMonth();render()},700);return}
+  if(el.id==="maxDaily"){S.school.maxDaily=Math.min(12,Math.max(1,+el.value||7));debounce("school",saveSchool);return}
+  if(d.rmatch!==undefined){S.review.rows[+d.rmatch].match=el.value;return}
+  if(d.rh!==undefined){S.review.rows[+d.rh].hours[+d.j]=Math.max(0,+el.value||0);return}
+  if(d.rd!==undefined){S.review.rows[+d.rd][d.k]=el.value;return}
+});
+document.addEventListener("change",async e=>{const el=e.target;
+  if(el.dataset.role){const id=el.dataset.role,role=el.value;el.disabled=true;
+    const {error}=await sb.from("profiles").update({role}).eq("id",id);el.disabled=false;
+    if(error){toast("השינוי לא נשמר");await loadUsers();return}const u=(S.users||[]).find(x=>x.id===id);if(u)u.role=role;renderTabs();toast("ההרשאה עודכנה: "+ROLES[role]);return}
+  if(el.id==="calOn"){S.cal.enabled=el.checked;render();saveCal();return}
+  if(el.dataset.rskip!==undefined){S.review.rows[+el.dataset.rskip].skip=el.checked;return}
+  if(el.id==="onlyTD"){S.school.onlyTeachingDays=el.checked;saveSchool();return}
+  if(el.dataset.rmatch!==undefined){S.review.rows[+el.dataset.rmatch].match=el.value;render();return}
+  if(el.dataset.up){const kind=el.dataset.up,files=[...el.files];if(!files.length)return;
+    S.busy[kind]="קוראת "+files.length+" קבצים…";render();
+    try{await({schedule:importSchedule,sick:importSick,quota:importQuota,calendar:importCalendar,targets:importTargets})[kind](files)}
+    catch(err){toast(err?.code==="not_granted"?"צריך לאשר למערכת לקרוא קבצים":err?.code==="rate_limited"?"יותר מדי בקשות. נסי שוב בעוד דקה.":err?.message?.startsWith("סוג")||err?.message?.startsWith("קריאת")?err.message:"לא הצלחתי לקרוא את הקובץ. נסי קובץ ברור יותר או הזיני ידנית.");console.error(err)}
+    delete S.busy[kind];render()}
+});
+document.addEventListener("submit",e=>{if(e.target.id==="authForm"){e.preventDefault();submitAuth(e.target)}});
+function setMonth(m){S.month=m;try{localStorage.setItem("mm.month",m)}catch(e){}S.md=null;S.review=null;S.confirm=null;subscribeMonth();render()}
+document.getElementById("mPrev").onclick=()=>setMonth(shiftMonth(S.month,-1));
+document.getElementById("mNext").onclick=()=>setMonth(shiftMonth(S.month,1));
+
+/* ---------- boot ---------- */
+function subscribeMonth(){if(S.unsubMonth)S.unsubMonth();const m=S.month;
+  S.unsubMonth=S.db.doc("months/"+m).onSnapshot(s=>{if(m!==S.month)return;if(s.metadata.hasPendingWrites&&S.md)return;
+    S.md=Object.assign(emptyMonth(),s.exists?clone(s.data()):{});if(!isTyping())render()},err=>console.error(err))}
+function isTyping(){const a=document.activeElement;return a&&(a.tagName==="INPUT"||a.tagName==="SELECT")&&a.type!=="file"&&a.type!=="checkbox"}
+/* ---------- cloud (Supabase) ---------- */
+const SB_URL="https://vgqmvkatyuwrlnanybqr.supabase.co";
+const SB_KEY="sb_publishable_fS0Tc01PeE39LoJgOu0rgA_bK7d_bU3";
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const CLIENT=Math.random().toString(36).slice(2,12);
+// same doc(path).get/set/onSnapshot shape the rest of the page was written against
+function makeDb(){const listeners={};const snap=d=>({exists:!!d,data:()=>d||undefined,metadata:{hasPendingWrites:false,fromCache:false}});
+  const ch=sb.channel("app_docs").on("postgres_changes",{event:"*",schema:"public",table:"app_docs"},p=>{
+    const row=p.eventType==="DELETE"?p.old:p.new;if(!row||!row.path)return;
+    if(p.eventType!=="DELETE"&&row.client===CLIENT)return; // my own write coming back
+    (listeners[row.path]||[]).forEach(fn=>fn(snap(p.eventType==="DELETE"?null:row.data)))}).subscribe();
+  return {channel:ch,doc(path){return{
+    async get(){const {data,error}=await sb.from("app_docs").select("data").eq("path",path).maybeSingle();if(error)throw error;return snap(data?data.data:null)},
+    async set(d){const {error}=await sb.from("app_docs").upsert({path,data:d,updated_at:new Date().toISOString(),updated_by:S.uid,client:CLIENT});if(error)throw error},
+    onSnapshot(fn,err){(listeners[path]??=[]).push(fn);this.get().then(fn,e=>{console.error(e);err&&err(e)});return()=>{listeners[path]=(listeners[path]||[]).filter(x=>x!==fn)}}}}}}
+async function loadProfile(){let p=null;for(let i=0;i<3&&!p;i++){const {data}=await sb.from("profiles").select("*").eq("id",S.uid).maybeSingle();
+    if(data)p=data;else await new Promise(r=>setTimeout(r,800))}
+  S.profile=p||{role:"pending"};S.role=S.profile.role;
+  S.allowed=["viewer","editor","admin"].includes(S.role);S.canEdit=["editor","admin"].includes(S.role);S.isAdmin=S.role==="admin";
+  document.body.classList.toggle("ro",S.allowed&&!S.canEdit);
+  if(S.allowed&&!S.db)startData();if(S.isAdmin)loadUsers()}
+function startData(){const db=S.db=makeDb();
+  let ready=0;const done=()=>{if(++ready===1){subscribeMonth();render()}};
+  db.doc("school/config").onSnapshot(s=>{S.school=Object.assign({maxDaily:7,onlyTeachingDays:true},s.exists?clone(s.data()):{});if(ready>=1&&!isTyping())render()});
+  db.doc("school/calendar").onSnapshot(s=>{S.cal=Object.assign({enabled:true,ranges:[]},s.exists?clone(s.data()):{});if(ready>=1&&!isTyping())render()});
+  db.doc("school/teachers").onSnapshot(s=>{S.teachers=s.exists?clone(s.data()).list||[]:[];if(ready<1)done();else if(!isTyping())render()},()=>done())}
+async function onSession(session){
+  if(!session){if(S.db?.channel)sb.removeChannel(S.db.channel);
+    Object.assign(S,{session:null,profile:null,role:null,allowed:false,canEdit:false,isAdmin:false,db:null,md:null,users:null,uid:null,view:"home"});
+    document.body.classList.remove("ro");render();return}
+  if(S.session&&S.session.user.id===session.user.id){S.session=session;return}
+  S.session=session;S.uid=session.user.id;S.profile=null;render();await loadProfile();render()}
+sb.auth.onAuthStateChange((ev,session)=>{
+  if(ev==="PASSWORD_RECOVERY"){S.auth="newpass";S.authMsg=""}
+  // run outside the auth callback: awaiting supabase calls inside it can stall
+  setTimeout(()=>onSession(session).then(()=>{if(ev==="PASSWORD_RECOVERY")render()}),0)});
+</script>
+
+</body></html>

@@ -96,6 +96,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
 .badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:99px;background:var(--marker);color:var(--marker-ink);font-size:12px;font-weight:700;margin-inline-start:4px}
 body.ro main input,body.ro main select{pointer-events:none;background:var(--off)}
 body.ro [data-act]:not([data-act=export]):not([data-act=copy-teacher]):not([data-act=cancel]):not([data-act=logout]),body.ro .sk,body.ro [data-delhol],body.ro [data-delrange],body.ro .drop{display:none}
+.qtag{display:inline-block;margin-top:3px;padding:1px 6px;border-radius:6px;background:var(--marker);color:var(--marker-ink);font-weight:700}
 .toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-weight:600;z-index:20;max-width:90vw}
 .center{min-height:60vh;display:grid;place-items:center;text-align:center}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;font-size:14px}
@@ -452,7 +453,7 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
     else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
-      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
+      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: נותרו ${Math.max(0,pl-v)}</span>`:""}${lk?" · ידני":""}</div>`;
       h+=sk?`<div class="meta sickl">יום מחלה<br>לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
   h+=`</div></div>`;
@@ -547,7 +548,7 @@ function vSettings(){const hol=S.md.holidays.filter(d=>d.startsWith(S.month)).so
   <div class="card"><h2>ימי חופש נוספים של בית הספר ב${monthLabel(S.month)}</h2><p class="muted">ימים שבית הספר סגור בהם מעבר ללוח של משרד החינוך.</p>
    <div class="row">${hol.map(d=>`<span class="chip">${fmtDate(d)}<button data-delhol="${d}" aria-label="הסרה">×</button></span>`).join("")||`<span class="muted">אין</span>`}</div>
    <div class="row"><input type="date" id="holDate" min="${S.month}-01" max="${S.month}-31"><button class="btn" data-act="add-hol">הוספה</button></div></div>`;
-  return h+`<div class="card"><h2>מחיקת נתוני החודש</h2>${S.confirm==="wipe"?`<div class="confirm"><span>למחוק תקן, מחלות ושיבוצים של ${monthLabel(S.month)}?</span><button class="btn danger" data-act="wipe-yes">מחיקה</button><button class="btn" data-act="cancel">ביטול</button></div>`:`<div class="row"><button class="btn danger" data-act="wipe">ניקוי ${monthLabel(S.month)}</button></div>`}</div>`}
+  return h+`<div class="card"><h2>מחיקת נתוני החודש</h2><p class="muted">מוחק רק את התקן, ימי המחלה, השיבוצים והשעות לכל מורה של החודש הזה. מערכת השעות, רשימת המורות ולוח החופשות נשארים לכל החודשים.</p>${S.confirm==="wipe"?`<div class="confirm"><span>למחוק תקן, מחלות ושיבוצים של ${monthLabel(S.month)}? מערכת השעות והמורות לא יימחקו.</span><button class="btn danger" data-act="wipe-yes">מחיקה</button><button class="btn" data-act="cancel">ביטול</button></div>`:`<div class="row"><button class="btn danger" data-act="wipe">ניקוי ${monthLabel(S.month)}</button></div>`}</div>`}
 function vAuth(){const m=S.auth,msg=S.authMsg?`<div class="note ${S.authOk?"ok":"bad"}">${esc(S.authMsg)}</div>`:"";
   const head={login:"כניסה למערכת",signup:"הרשמה",forgot:"איפוס סיסמה",newpass:"סיסמה חדשה"}[m];
   let f="";

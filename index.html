@@ -163,8 +163,11 @@ function subOf(tid,date){return +((S.md.subs[tid]||{})[date])||0}
 function calHoliday(date){if(!S.cal.enabled)return null;const r=(S.cal.ranges||[]).find(r=>date>=r.from&&date<=(r.to||r.from));return r?r.name||"חופשה":null}
 function holidayName(date){return S.md.holidays.includes(date)?"חופש":calHoliday(date)}
 function dayOpen(day){return day.wd!==6&&!holidayName(day.date)}
+function noSchedule(t){return !(t.hours||[]).some(h=>+h>0)}
+function freeLeft(t,day){return Math.max(0,capacity(t,day)-subOf(t.id,day.date))}
 function capacity(t,day){ // max substitution hours allowed that day
   if(!dayOpen(day)||isSick(t.id,day.date))return 0;
+  if(noSchedule(t))return +S.school.freeMax||6;
   const s=sched(t,day.wd);if(S.school.onlyTeachingDays&&s===0)return 0;
   return Math.max(0,(+S.school.maxDaily||7)-s)}
 function totalSubs(){let n=0;for(const tid in S.md.subs)if(teacherById(tid))for(const d in S.md.subs[tid])n+=+S.md.subs[tid][d]||0;return n}
@@ -371,7 +374,7 @@ function renderTabs(){const n=document.getElementById("tabs"),w=document.getElem
   w.innerHTML=S.session?`<span>${esc(S.profile?.full_name||S.session.user.email)}${S.role?" · "+ROLES[S.role]:""}</span><button data-act="logout">יציאה</button>`:"";
   if(!S.allowed){n.innerHTML="";return}
   const pend=(S.users||[]).filter(u=>u.role==="pending").length;
-  const tabs=[["home","סיכום החודש"],["teachers","מורות"]];if(S.canEdit)tabs.push(["import",S.sample?"העלאת קבצים":"הזנת נתונים"]);tabs.push(["settings","הגדרות"]);if(S.isAdmin)tabs.push(["users","משתמשים"]);
+  const tabs=[["home","סיכום החודש"],["day","זמינות לפי יום"],["teachers","מורות"]];if(S.canEdit)tabs.push(["import",S.sample?"העלאת קבצים":"הזנת נתונים"]);tabs.push(["settings","הגדרות"]);if(S.isAdmin)tabs.push(["users","משתמשים"]);
   n.innerHTML=tabs.map(([k,l])=>`<button data-tab="${k}" aria-current="${S.view===k||(k==="teachers"&&S.view==="teacher")}">${l}${k==="users"&&pend?`<span class="badge">${pend}</span>`:""}</button>`).join("")}
 function render(){document.getElementById("mLabel").textContent=monthLabel(S.month);renderTabs();
   document.querySelector(".month").hidden=!S.allowed;
@@ -379,7 +382,7 @@ function render(){document.getElementById("mLabel").textContent=monthLabel(S.mon
   if(!S.profile){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
   if(!S.allowed){window.__booted=true;app.innerHTML=`<div class="center"><div class="card" style="max-width:460px"><h2>${S.role==="blocked"?"הגישה שלך נחסמה":"ההרשמה התקבלה"}</h2><p class="muted">${S.role==="blocked"?"פני למנהלת המערכת.":"מנהלת המערכת צריכה לאשר אותך. אחרי האישור תוכלי להיכנס."}</p><div class="row"><button class="btn" data-act="recheck">בדיקה אם אושרתי</button></div></div></div>`;return}
   if(!S.md){app.innerHTML=`<div class="center"><div class="spin"></div></div>`;return}
-  const v={home:vHome,teachers:vTeachers,teacher:vTeacher,import:vImport,settings:vSettings,users:vUsers}[S.view]||vHome;
+  const v={home:vHome,teachers:vTeachers,teacher:vTeacher,day:vDay,import:vImport,settings:vSettings,users:vUsers}[S.view]||vHome;
   const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
 
 function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
@@ -447,7 +450,7 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
     else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
-      h+=`<div class="meta">מערכת ${sched(t,day.wd)} · פנוי לה ${c}${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
+      h+=`<div class="meta">${noSchedule(t)?"אין מערכת":"מערכת "+sched(t,day.wd)} · פנוי לה עוד ${Math.max(0,c-v)}${hasDayQuota()?`<br>תקן היום: נותרו ${Math.max(0,pl-v)}`:""}${lk?" · ידני":""}</div>`;
       h+=sk?`<div class="meta" style="color:var(--sick)">לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
   h+=`</div></div>`;
@@ -456,6 +459,32 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
   ${lines.length?`<div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>שעות</th><th>במערכת</th><th>סה״כ ביום</th></tr></thead><tbody>${days.filter(d=>subOf(t.id,d.date)).map(d=>`<tr><td>${fmtDate(d.date)}</td><td>${DAYS[d.wd]}</td><td><b>${subOf(t.id,d.date)}</b></td><td>${sched(t,d.wd)}</td><td>${sched(t,d.wd)+subOf(t.id,d.date)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">אין עדיין שעות לדיווח. לחצי "תכנון אוטומטי" במסך הסיכום או הקלידי שעות בלוח.</p>`}</div>`;
   return h}
 
+function pickDayDefault(days){const td=new Date();const iso=td.getFullYear()+"-"+pad(td.getMonth()+1)+"-"+pad(td.getDate());
+  if(S.day&&days.some(d=>d.date===S.day))return S.day;const up=days.find(d=>d.date>=iso);return (up||days[0]||{}).date}
+function vDay(){const days=monthDays(S.month).filter(dayOpen);
+  let h=`<div><h1>זמינות לפי יום</h1><p class="muted">בוחרים תאריך ורואים לכל מורה אם אפשר לתת לה עוד שעת מילוי מקום באותו יום, וכמה.</p></div>`;
+  if(!days.length)return h+`<p class="muted">אין ימי לימודים בחודש הזה.</p>`;
+  S.day=pickDayDefault(days);const day=days.find(d=>d.date===S.day);
+  h+=`<div class="row" style="gap:6px">${days.map(d=>`<button class="btn${d.date===S.day?" primary":""}" data-day="${d.date}" style="padding:5px 9px;min-width:54px"><span style="font-size:12px;font-weight:600">${DAYS[d.wd]}</span><br>${fmtDate(d.date)}</button>`).join("")}</div>`;
+  const ql=hasDayQuota()?dayQuota(day.date)-daySubs(day.date):null;
+  const rows=S.teachers.map(t=>({t,sk:isSick(t.id,day.date),v:subOf(t.id,day.date),f:freeLeft(t,day)})).sort((a,b)=>b.f-a.f||a.t.name.localeCompare(b.t.name,"he"));
+  const nFree=rows.filter(r=>r.f>0).length;
+  h+=`<div class="kpis"><div class="kpi hl"><div class="n">${nFree}</div><div class="l">מורות שאפשר לתת להן עוד שעה ב-${fmtDate(day.date)}</div></div>
+    <div class="kpi"><div class="n">${daySubs(day.date)}</div><div class="l">שעות מ"מ ששובצו ביום הזה</div></div>
+    ${ql===null?"":`<div class="kpi"><div class="n" style="color:${ql<0?"var(--danger)":"inherit"}">${ql}</div><div class="l">נותרו בתקן של היום</div></div>`}</div>`;
+  if(ql!==null&&ql<=0)h+=`<div class="note bad">התקן של ${fmtDate(day.date)} נוצל${ql<0?" ואף עבר":""}. אי אפשר לדווח בו עוד שעות.</div>`;
+  h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>אפשר עוד שעה?</th><th></th><th>במערכת</th><th>שובץ מ"מ</th></tr></thead><tbody>`;
+  for(const r of rows){const st=r.sk?`<span class="pill sick">יום מחלה</span>`:r.f>0?`<span class="pill ok">כן, עוד ${r.f}</span>`:`<span class="pill bad">לא</span>`;
+    const canAdd=r.f>0&&(ql===null||ql>0);
+    h+=`<tr><td><button class="btn" data-teacher="${r.t.id}" style="padding:4px 10px">${esc(r.t.name)}</button></td><td>${st}</td>
+    <td><button class="btn" data-act="day-add" data-id="${r.t.id}" ${canAdd?"":"disabled"} style="padding:3px 10px">+1</button> <button class="btn" data-act="day-sub" data-id="${r.t.id}" ${r.v?"":"disabled"} style="padding:3px 10px">−1</button></td><td>${noSchedule(r.t)?"אין מערכת":sched(r.t,day.wd)}</td><td><b>${r.v||"–"}</b></td></tr>`}
+  h+=`</tbody></table></div>`;
+  // whole month at a glance: hours still free per teacher per day
+  h+=`<div class="card"><h2>כל החודש במבט אחד</h2><p class="muted">בכל תא: כמה שעות מ"מ אפשר עוד לתת למורה באותו יום. ריק = לא פנויה.</p>
+  <div class="tbl"><table style="font-size:13px"><thead><tr><th>מורה</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center">${DAYS[d.wd].slice(0,1)}׳<br>${fmtDate(d.date)}</th>`).join("")}</tr></thead><tbody>`;
+  for(const t of S.teachers){h+=`<tr><td style="padding:6px 8px">${esc(t.name)}</td>`+days.map(d=>{const f=freeLeft(t,d),sk=isSick(t.id,d.date);
+      return `<td style="padding:6px 4px;text-align:center;${sk?"background:var(--sick-soft);color:var(--sick)":f>0?"background:var(--accent-soft);color:var(--accent);font-weight:700":"color:var(--muted)"}">${sk?"מ":f>0?f:""}</td>`}).join("")+`</tr>`}
+  return h+`</tbody></table></div><p class="muted" style="font-size:13px">מ = יום מחלה</p></div>`}
 function busyLine(k){const b=S.busy[k];return b?`<p class="muted"><span class="spin"></span> ${esc(b)}</p>`:""}
 function vImport(){if(S.review)return vReview();
   const opts=S.teachers.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("");
@@ -505,7 +534,9 @@ function vSettings(){const hol=S.md.holidays.filter(d=>d.startsWith(S.month)).so
   let h=`<h1>הגדרות</h1>
   <div class="card"><h2>כללי תכנון</h2><div class="row">
    <label class="f">מקסימום שעות ביום למורה (כולל מערכת)<input type="number" min="1" max="12" id="maxDaily" value="${S.school.maxDaily}"></label>
-   <label class="row" style="gap:6px;align-self:flex-end"><input type="checkbox" id="onlyTD" ${S.school.onlyTeachingDays?"checked":""}> לשבץ רק בימים שהמורה מלמדת</label></div></div>
+   <label class="row" style="gap:6px;align-self:flex-end"><input type="checkbox" id="onlyTD" ${S.school.onlyTeachingDays?"checked":""}> לשבץ רק בימים שהמורה מלמדת</label>
+   <label class="f">מורה בלי מערכת: עד כמה שעות מ"מ ביום<input type="number" min="1" max="12" id="freeMax" value="${+S.school.freeMax||6}"></label></div>
+   <p class="muted" style="font-size:14px">מורה שאין לה אף שעה במערכת נחשבת פנויה בכל יום לימודים (חוץ מימי מחלה וחופשות).</p></div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החופשות של משרד החינוך (יסודי)</h2>
    <label class="row" style="gap:6px"><input type="checkbox" id="calOn" ${S.cal.enabled?"checked":""}> פעיל</label></div>
    <p class="muted">${esc(S.cal.title||"")} · בימי החופשה לא ישובץ מילוי מקום. אפשר להוסיף ולהסיר חופשות, והשינוי נשמר לכל המשתמשות.</p>
@@ -571,7 +602,14 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     S.md.sick[tid]=[...set].sort();render();saveMonth();return}
   if(d.delrange!==undefined){S.cal.ranges=S.cal.ranges.filter((_,i)=>i!==+d.delrange);render();await saveCal();return}
   if(d.delhol){S.md.holidays=S.md.holidays.filter(x=>x!==d.delhol);render();saveMonth();return}
+  if(d.day){S.day=d.day;render();return}
   switch(d.act){
+    case "day-add":case "day-sub":{const tid=d.id,date=S.day,t=teacherById(tid),day=monthDays(S.month).find(x=>x.date===date);if(!t||!day)return;
+      const v=subOf(tid,date)+(d.act==="day-add"?1:-1);
+      if(d.act==="day-add"&&(freeLeft(t,day)<=0||(hasDayQuota()&&dayQuota(date)-daySubs(date)<=0)))return toast("אין מקום ביום הזה");
+      S.md.subs[tid]=S.md.subs[tid]||{};S.md.locked[tid]=S.md.locked[tid]||{};
+      if(v>0){S.md.subs[tid][date]=v;S.md.locked[tid][date]=true}else{delete S.md.subs[tid][date];delete S.md.locked[tid][date]}
+      render();await saveMonth();return}
     case "logout":await sb.auth.signOut();return;
     case "recheck":await loadProfile();render();return;
     case "users-refresh":S.users=null;render();await loadUsers();return;
@@ -610,6 +648,7 @@ document.addEventListener("input",e=>{const el=e.target,d=el.dataset;
   if(d.qday){const v=Math.max(0,Math.round(+el.value||0));S.md.quotaDays=S.md.quotaDays||{};if(v)S.md.quotaDays[d.qday]=v;else delete S.md.quotaDays[d.qday];if(S.md.quotaParts)delete S.md.quotaParts[d.qday];debounce("month",()=>{saveMonth();render()},800);return}
   if(d.target){const v=Math.max(0,+el.value||0);if(v)S.md.targets[d.target]=v;else delete S.md.targets[d.target];debounce("month",()=>{saveMonth();render()},800);return}
   if(el.id==="target"){const v=Math.max(0,+el.value||0);if(v)S.md.targets[S.teacher]=v;else delete S.md.targets[S.teacher];debounce("month",()=>{saveMonth();render()},700);return}
+  if(el.id==="freeMax"){S.school.freeMax=Math.min(12,Math.max(1,+el.value||6));debounce("school",saveSchool);return}
   if(el.id==="maxDaily"){S.school.maxDaily=Math.min(12,Math.max(1,+el.value||7));debounce("school",saveSchool);return}
   if(d.rmatch!==undefined){S.review.rows[+d.rmatch].match=el.value;return}
   if(d.rh!==undefined){S.review.rows[+d.rh].hours[+d.j]=Math.max(0,+el.value||0);return}

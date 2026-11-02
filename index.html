@@ -414,11 +414,9 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   const sumT=S.teachers.reduce((a,t)=>a+(+S.md.targets[t.id]||0),0);
   if(S.teachers.length)h+=`<div class="card" style="gap:6px"><h2>כמה שעות כל מורה צריכה לקבל החודש</h2><p class="muted">הקלידי בעמודה "צריכה לקבל" (או העלי קובץ בלשונית העלאת קבצים), ואז לחצי <b>תכנון אוטומטי</b>. המערכת תמצא לכל מורה באילו ימים לדווח. מורה בלי מספר לא תקבל שעות, אלא אם לא הזנת מספרים לאף מורה, ואז התקן מתחלק שווה.</p>
     ${sumT?`<p>סך השעות שהזנת: <b>${sumT}</b>${q?` מתוך תקן של <b>${q}</b>`:""}</p>`:""}${q&&sumT>q?`<div class="note bad">הזנת ${sumT-q} שעות יותר מהתקן. התכנון יעצור כשהתקן ייגמר.</div>`:""}</div>`;
-  if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה</th><th>מקום פנוי בחודש</th><th>מצב</th></tr></thead><tbody>`;
+  if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה</th></tr></thead><tbody>`;
     for(const t of S.teachers){const s=teacherSubs(t.id),days=Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length,sick=(S.md.sick[t.id]||[]).length,tg=+S.md.targets[t.id]||0;
-      const room=monthCapacity(t);
-      const st=tg?(s>=tg?`<span class="pill ok">שובצו כל השעות</span>`:room+s<tg?`<span class="pill bad">אין מספיק מקום · חסרות ${tg-s}</span>`:`<span class="pill warn">חסרות ${tg-s}</span>`):s?`<span class="pill ok">שובץ</span>`:`<span class="pill">לא הוזן</span>`;
-      h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick}</span>`:"–"}</td><td>${room}</td><td>${st}</td></tr>`}
+      h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick}</span>`:"–"}</td></tr>`}
     h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: עד ${S.school.maxDaily} שעות ביום כולל המערכת, לא בימי מחלה, ${S.school.onlyTeachingDays?"רק בימים שהמורה מלמדת,":""} ובסך הכל לא יותר מהתקן.</p>`}
   return h}
 
@@ -438,11 +436,11 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
   <div class="row" style="justify-content:space-between;align-items:flex-end"><div><h1>${esc(t.name)}</h1><p class="muted">${monthLabel(S.month)} · מערכת: ${[0,1,2,3,4,5].map(i=>DAYS[i].slice(0,1)+"׳ "+sched(t,i)).join(" · ")}</p></div>
   <div class="row" style="align-items:flex-end"><label class="f">שעות שצריכה לקבל החודש<input type="number" min="0" id="target" value="${tg||""}" placeholder="–"></label>
   <button class="btn primary" data-act="plan-one" ${tg?"":"disabled"}>שבצי לה את השעות</button></div></div>
-  ${tg&&tg>capTotal+s?`<div class="note bad">ל${esc(t.name)} יש מקום פנוי ל-${capTotal+s} שעות בלבד החודש (לפי המערכת, ימי מחלה וחופשות). אי אפשר לשבץ את כל ${tg} השעות.</div>`:tg&&s<tg?`<div class="note">שובצו ${s} מתוך ${tg} שעות. לחצי "שבצי לה את השעות" כדי להשלים.</div>`:tg&&s>=tg?`<div class="note ok">כל ${tg} השעות שובצו.</div>`:""}
+  ${tg&&s<tg?`<div class="note">שובצו ${s} מתוך ${tg} שעות. לחצי "שבצי לה את השעות" כדי להשלים.</div>`:tg&&s>=tg?`<div class="note ok">כל ${tg} השעות שובצו.</div>`:""}
   <div class="kpis"><div class="kpi hl"><div class="n">${s}</div><div class="l">שעות מילוי מקום לדיווח</div></div>
   <div class="kpi"><div class="n">${Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length}</div><div class="l">ימים עם דיווח</div></div>
   <div class="kpi"><div class="n">${sick.length}</div><div class="l">ימי מחלה</div></div>
-  <div class="kpi"><div class="n">${capTotal}</div><div class="l">שעות פנויות אפשריות בחודש</div></div></div>
+</div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החודש</h2><span class="muted" style="font-size:14px">הקלידי שעות בתא כדי לקבע אותן ידנית · "מחלה" מסמן יום מחלה</span></div><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
   for(const day of days){
     const open=dayOpen(day),sk=isSick(t.id,day.date),c=capacity(t,day),v=subOf(t.id,day.date),lk=(S.md.locked[t.id]||{})[day.date];

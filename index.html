@@ -97,6 +97,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
 body.ro main input,body.ro main select{pointer-events:none;background:var(--off)}
 body.ro [data-act]:not([data-act=export]):not([data-act=copy-teacher]):not([data-act=cancel]):not([data-act=logout]),body.ro .sk,body.ro [data-delhol],body.ro [data-delrange],body.ro .drop{display:none}
 .qtag{display:inline-block;margin-top:3px;padding:1px 6px;border-radius:6px;background:var(--marker);color:var(--marker-ink);font-weight:700}
+.who{font-size:11px;line-height:1.25;color:var(--sick);border-top:1px dashed var(--line);padding-top:2px}.who b{color:var(--sick)}
 .toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-weight:600;z-index:20;max-width:90vw}
 .center{min-height:60vh;display:grid;place-items:center;text-align:center}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;font-size:14px}
@@ -395,9 +396,15 @@ function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
   for(const day of days){const open=dayOpen(day),tot=sickRelease(day.date),u=daySubs(day.date);
     const cls=!open?"off":u>tot?"over":tot&&u===tot?"full":"";
     h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
-    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta"><span class="qtag">תקן ${tot}</span><br>שובצו <b>${u}</b>${tot>u?`<br>נותרו ${tot-u}`:""}</div>`;
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta"><span class="qtag">תקן ${tot}</span><br>שובצו <b>${u}</b>${tot>u?`<br>נותרו ${tot-u}`:""}</div>${sickReleaseList(day.date).map(x=>`<div class="who">${esc(x.t.name)} <b>${x.h}</b></div>`).join("")}`;
     h+=`</div>`}
-  return h+`</div></div>`}
+  const rows=[];for(const day of days)if(dayOpen(day))for(const x of sickReleaseList(day.date))rows.push({day,...x});
+  h+=`</div><h3>פירוט השעות ששוחררו מימי מחלה</h3>`;
+  if(!rows.length)return h+`<p class="muted">אין ימי מחלה עם שעות הוראה בחודש הזה.</p></div>`;
+  h+=`<div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>מורה במחלה</th><th>שעות ששוחררו</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr><td>${fmtDate(r.day.date)}</td><td>${DAYS[r.day.wd]}</td><td>${esc(r.t.name)}</td><td><b>${r.h}</b></td></tr>`).join("")+
+    `</tbody><tfoot><tr><th colspan="3">סה״כ</th><th>${rows.reduce((a,r)=>a+r.h,0)}</th></tr></tfoot></table></div>`;
+  return h+`</div>`}
 function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
   const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
   const sickCount=Object.entries(S.md.sick).filter(([k,v])=>teacherById(k)&&v.some(d=>d.startsWith(S.month))).length;

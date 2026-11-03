@@ -672,7 +672,7 @@ document.addEventListener("change",async e=>{const el=e.target;
   if(el.dataset.up){const kind=el.dataset.up,files=[...el.files];if(!files.length)return;
     S.busy[kind]="קוראת "+files.length+" קבצים…";render();
     try{await({schedule:importSchedule,sick:importSick,quota:importQuota,calendar:importCalendar,targets:importTargets})[kind](files)}
-    catch(err){toast(err?.code==="not_granted"?"צריך לאשר למערכת לקרוא קבצים":err?.code==="rate_limited"?"יותר מדי בקשות. נסי שוב בעוד דקה.":err?.message?.startsWith("סוג")||err?.message?.startsWith("קריאת")?err.message:"לא הצלחתי לקרוא את הקובץ. נסי קובץ ברור יותר או הזיני ידנית.");console.error(err)}
+    catch(err){toast(err?.code==="no_key"||err?.code==="bad_key"?"קריאת הקבצים עוד לא מחוברת (חסר מפתח). פני למי שמתחזק את המערכת.":err?.code==="not_allowed"?"אין לך הרשאה להעלות קבצים":err?.code==="not_granted"?"צריך לאשר למערכת לקרוא קבצים":err?.code==="rate_limited"?"יותר מדי בקשות. נסי שוב בעוד דקה.":err?.message?.startsWith("סוג")||err?.message?.startsWith("קריאת")?err.message:"לא הצלחתי לקרוא את הקובץ. נסי קובץ ברור יותר או הזיני ידנית.");console.error(err)}
     delete S.busy[kind];render()}
 });
 document.addEventListener("submit",e=>{if(e.target.id==="authForm"){e.preventDefault();submitAuth(e.target)}});
@@ -707,7 +707,26 @@ async function loadProfile(){window.__stage="profile";let p=null;for(let i=0;i<3
   S.profile=p||{role:"pending"};S.role=S.profile.role;
   S.allowed=["viewer","editor","admin"].includes(S.role);S.canEdit=["editor","admin"].includes(S.role);S.isAdmin=S.role==="admin";
   document.body.classList.toggle("ro",S.allowed&&!S.canEdit);
-  if(S.allowed&&!S.db)startData();if(S.isAdmin)loadUsers()}
+  if(S.allowed&&!S.db)startData();if(S.isAdmin)loadUsers();checkFileReader()}
+/* ---------- file reading through the read-file server function ---------- */
+async function prepImage(blob){ // shrink big photos so uploads stay small
+  try{const bmp=await createImageBitmap(blob);const k=Math.min(1,1800/Math.max(bmp.width,bmp.height));
+    if(k<1||blob.size>1500000||!/^image\/(png|jpeg|webp|gif)$/.test(blob.type)){const c=document.createElement("canvas");c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);
+      c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.85))}}catch(e){}
+  const data=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(",")[1]);fr.onerror=rej;fr.readAsDataURL(blob)});
+  return {type:blob.type||"image/jpeg",data}}
+function parseLoose(t){t=String(t||"").trim();try{return JSON.parse(t)}catch(e){}
+  const f=t.match(/```(?:json)?\s*([\s\S]*?)```/);if(f){try{return JSON.parse(f[1])}catch(e){}}
+  const i=t.search(/[\[{]/),j=Math.max(t.lastIndexOf("}"),t.lastIndexOf("]"));if(i>=0&&j>i){try{return JSON.parse(t.slice(i,j+1))}catch(e){}}
+  throw {code:"invalid_json",message:"bad answer"}}
+const fileReader={limits:async()=>({images:{maxCount:4}}),
+  async json(input,opts={}){const images=[];for(const b of [].concat(opts.images?[...opts.images]:[]))images.push(await prepImage(b));
+    const {data,error}=await sb.functions.invoke("read-file",{body:{prompt:input,images}});
+    if(error){let code="api_error";try{code=(await error.context.json()).error||code}catch(e){}throw {code,message:String(error.message||code)}}
+    return parseLoose(data.text)}};
+async function checkFileReader(){if(!S.canEdit)return;try{const {data}=await sb.functions.invoke("read-file",{body:{ping:true}});
+    S.sample=data&&data.ready?fileReader:null}catch(e){S.sample=null}
+  S.readerChecked=true;if(S.view==="import"||S.view==="home"||S.view==="settings")render()}
 function startData(){window.__stage="data";const db=S.db=makeDb();
   let ready=0;const done=()=>{if(++ready===1){subscribeMonth();render()}};
   db.doc("school/config").onSnapshot(s=>{S.school=Object.assign({maxDaily:7,onlyTeachingDays:true},s.exists?clone(s.data()):{});if(ready>=1&&!isTyping())render()});

@@ -172,9 +172,12 @@ function capacity(t,day){ // max substitution hours allowed that day
   return Math.max(0,(+S.school.maxDaily||7)-s)}
 function totalSubs(){let n=0;for(const tid in S.md.subs)if(teacherById(tid))for(const d in S.md.subs[tid])n+=+S.md.subs[tid][d]||0;return n}
 function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.subs[tid][d]||0;return n}
-function hasDayQuota(){return Object.values(S.md.quotaDays||{}).some(v=>+v>0)}
-function dayQuota(date){return hasDayQuota()?(+S.md.quotaDays[date]||0):Infinity}
-function quotaTotal(){let n=0;for(const d in (S.md.quotaDays||{}))if(d.startsWith(S.month))n+=+S.md.quotaDays[d]||0;return n}
+function sickRelease(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return 0;
+  let n=0;for(const t of S.teachers)if(isSick(t.id,date))n+=sched(t,wd);return n}
+function sickReleaseList(date){const wd=new Date(date+"T12:00:00").getDay();return S.teachers.filter(t=>isSick(t.id,date)&&sched(t,wd)>0).map(t=>({t,h:sched(t,wd)}))}
+function hasDayQuota(){return Object.values(S.md.quotaDays||{}).some(v=>+v>0)||Object.values(S.md.sick||{}).some(a=>a.length)}
+function dayQuota(date){return hasDayQuota()?(+(S.md.quotaDays||{})[date]||0)+sickRelease(date):Infinity}
+function quotaTotal(){let n=0;for(const d of monthDays(S.month))n+=(+(S.md.quotaDays||{})[d.date]||0)+sickRelease(d.date);return n}
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=subOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
   for(const t of S.teachers)for(const day of days){const h=subOf(t.id,day.date);if(!h)continue;
@@ -320,15 +323,13 @@ async function importTargets(files){const names=S.teachers.map(t=>t.name).join("
   S.review={kind:"targets",rows:found.map(r=>({...r,match:matchTeacher(r.name)}))}}
 async function importQuota(files){const found={};let explain="";
   for(const f of files){const parts=await fileParts(f);
-    const r=await askAI(`זהו צילום מסך מאתר משרד החינוך עם שעות התקן למילוי מקום, לפי תאריכים (חודש ${monthLabel(S.month)}, ${S.month}).
-לכל תאריך שמופיע החזר שני מספרים:
-1. hours – שעות התקן הפנויות למילוי מקום באותו תאריך (אם מופיעים "נוצל" ו"יתרה", היתרה הפנויה).
-2. absences – מספר השעות שמופיע בשורה של ההעדרויות (שורה שכתוב בה "העדרויות" או "היעדרויות") באותו תאריך. אם אין שורה כזו או התא ריק, כתוב 0.
-אל תכפיל מספר: אם שורת ההעדרויות היא השורה היחידה עם שעות, כתוב את המספר רק ב-absences ו-0 ב-hours.
-תאריך בלי שנה שייך לשנה של החודש הזה. החזר JSON בלבד: {"days":[{"date":"YYYY-MM-DD","hours":מספר,"absences":מספר}],"explain":"משפט קצר מה מצאת בכל שורה"}`,parts);
-    for(const x of (r&&r.days)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.date||""))found[x.date]={hours:Math.max(0,Math.round(+x.hours||0)),abs:Math.max(0,Math.round(+x.absences||0))};
+    const r=await askAI(`זהו צילום מסך מאתר משרד החינוך של תקן מילוי מקום לפי תאריכים (חודש ${monthLabel(S.month)}, ${S.month}).
+קח רק את השורה "העדרות משחררת תקן" (או שורה עם שם דומה מאוד, כמו "היעדרות משחררת תקן"). לכל תאריך החזר את מספר השעות שבשורה הזו.
+אל תיקח שום שורה אחרת (לא "יתרה", לא "נוצל", לא העדרויות אחרות). תא ריק = 0.
+תאריך בלי שנה שייך לשנה של החודש הזה. החזר JSON בלבד: {"days":[{"date":"YYYY-MM-DD","hours":מספר}],"explain":"משפט קצר: איזו שורה לקחת"}`,parts);
+    for(const x of (r&&r.days)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.date||""))found[x.date]=Math.max(0,Math.round(+x.hours||0));
     if(r?.explain)explain=String(r.explain)}
-  S.review={kind:"quota",explain,rows:Object.keys(found).sort().map(date=>({date,hours:found[date].hours,abs:found[date].abs}))}}
+  S.review={kind:"quota",explain,rows:Object.keys(found).sort().map(date=>({date,hours:found[date]}))}}
 function datesBetween(a,b){const out=[];let d=new Date(a+"T12:00:00");const e=new Date(b+"T12:00:00");let guard=0;
   while(d<=e&&guard++<120){out.push(d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()));d.setDate(d.getDate()+1)}return out}
 async function addSick(tid,from,to){
@@ -350,11 +351,9 @@ async function applyReview(){const R=S.review;
     const top=Object.keys(per).sort((a,b)=>per[b]-per[a])[0];
     if(top&&!per[S.month]){S.review=null;S.view="home";setMonth(top);toast(n+" אישורי מחלה נשמרו ב"+monthLabel(top)+". עברתי לחודש הזה.");return}
     toast(n+" אישורי מחלה נשמרו"+(Object.keys(per).length>1?" ("+Object.keys(per).sort().map(monthLabel).join(", ")+")":""))}
-  if(R.kind==="quota"){let n=0,other=0;S.md.quotaDays=S.md.quotaDays||{};
-    S.md.quotaParts=S.md.quotaParts||{};
-    for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}const tot=(+r.hours||0)+(+r.abs||0);
-      if(tot>0){S.md.quotaDays[r.date]=tot;S.md.quotaParts[r.date]={free:+r.hours||0,abs:+r.abs||0}}else{delete S.md.quotaDays[r.date];delete S.md.quotaParts[r.date]}n++}
-    await saveMonth();toast("התקן עודכן ל-"+n+" ימים"+(other?" ("+other+" תאריכים מחודש אחר לא נשמרו)":""));S.view="home"}
+  if(R.kind==="quota"){let n=0,other=0;S.md.quotaDays=S.md.quotaDays||{};delete S.md.quotaParts;
+    for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}if(+r.hours>0)S.md.quotaDays[r.date]=+r.hours;else delete S.md.quotaDays[r.date];n++}
+    await saveMonth();toast("העדרות משחררת תקן עודכנו ל-"+n+" ימים"+(other?" ("+other+" תאריכים מחודש אחר לא נשמרו)":""));S.view="home"}
   if(R.kind==="targets"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;if(+r.hours>0)S.md.targets[r.match]=+r.hours;else delete S.md.targets[r.match];n++}
     await saveMonth();toast("נשמרו שעות ל-"+n+" מורות");S.view="home"}
   if(R.kind==="calendar"){const rows=R.rows.filter(r=>r.from&&!r.skip);if(rows.length){S.cal.ranges=rows.map(({name,from,to})=>({name,from,to:to<from?from:to}));S.cal.enabled=true;await saveCal();toast("לוח החופשות עודכן: "+rows.length+" חופשות")}}
@@ -391,12 +390,14 @@ function render(){document.getElementById("mLabel").textContent=monthLabel(S.mon
   const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
 
 function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
-  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תקן מילוי מקום לפי ימים</h2>${S.sample?`<button class="btn" data-tab="import">העלאת צילום מסך</button>`:""}</div>
-  <p class="muted">לכל יום: כמה שעות פנויות יש בתקן לפי אתר משרד החינוך. מתחת למספר רואים כמה כבר שובצו.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
-  for(const day of days){const open=dayOpen(day),q=+(S.md.quotaDays||{})[day.date]||0,u=daySubs(day.date);
-    const cls=!open?"off":u>q&&hasDayQuota()?"over":q&&u===q?"full":"";
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תקן מילוי מקום לפי ימים</h2><div class="row">${S.sample?`<button class="btn" data-tab="import">העלאת צילום מסך</button>`:""}<button class="btn danger" data-act="quota-reset">איפוס התקן</button></div></div>
+  ${S.confirm==="qreset"?`<div class="confirm"><span>למחוק את כל המספרים מהצילום של ${monthLabel(S.month)}? שעות ימי המחלה יישארו, כי הן מחושבות מהאישורים.</span><button class="btn danger" data-act="quota-reset-yes">איפוס</button><button class="btn" data-act="cancel">ביטול</button></div>`:""}
+  <p class="muted">התקן של כל יום = <b>העדרות משחררת תקן</b> מאתר משרד החינוך (מקלידים בתיבה) + <b>שעות ימי מחלה</b>: לכל מורה במחלה, מספר שעות ההוראה שלה באותו יום לפי המערכת (מחושב לבד).</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){const open=dayOpen(day),q=+(S.md.quotaDays||{})[day.date]||0,sr=sickRelease(day.date),tot=q+sr,u=daySubs(day.date);
+    const cls=!open?"off":u>tot&&hasDayQuota()?"over":tot&&u===tot?"full":"";
     h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
-    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>${q?`<div class="meta">תקן ${q}</div>`:""}`:`<input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="תקן ${day.d}">${(S.md.quotaParts||{})[day.date]?.abs?`<div class="meta">תקן ${S.md.quotaParts[day.date].free} + העדרויות ${S.md.quotaParts[day.date].abs}</div>`:""}<div class="meta">שובצו <b>${u}</b></div>`;
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="העדרות משחררת תקן ${day.d}" title="העדרות משחררת תקן">
+      ${sr?`<div class="meta" style="color:var(--sick);font-weight:700">+ מחלות ${sr}</div>`:""}<div class="meta"><span class="qtag">סה״כ ${tot}</span><br>שובצו <b>${u}</b></div>`;
     h+=`</div>`}
   return h+`</div></div>`}
 function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
@@ -406,7 +407,7 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   <div class="row"><button class="btn primary" data-act="plan" ${!S.teachers.length?"disabled":""}>תכנון אוטומטי</button>
   <button class="btn" data-act="export" ${!used?"disabled":""}>הורדה לאקסל</button></div></div>`;
   if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
-  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (סכום הימים)</div></div>
+  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (צילום + ימי מחלה)</div></div>
   <div class="kpi hl"><div class="n">${used}</div><div class="l">שעות משובצות לדיווח</div></div>
   <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
   <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
@@ -475,6 +476,8 @@ function vDay(){const days=monthDays(S.month).filter(dayOpen);
   h+=`<div class="kpis"><div class="kpi hl"><div class="n">${nFree}</div><div class="l">מורות שאפשר לתת להן עוד שעה ב-${fmtDate(day.date)}</div></div>
     <div class="kpi"><div class="n">${daySubs(day.date)}</div><div class="l">שעות מ"מ ששובצו ביום הזה</div></div>
     ${ql===null?"":`<div class="kpi"><div class="n" style="color:${ql<0?"var(--danger)":"inherit"}">${ql}</div><div class="l">נותרו בתקן של היום</div></div>`}</div>`;
+  if(ql!==null){const sl=sickReleaseList(day.date),q0=+(S.md.quotaDays||{})[day.date]||0;
+    h+=`<p class="muted" style="font-size:14px">תקן היום ${dayQuota(day.date)} = ${q0} העדרות משחררת תקן${sl.length?" + "+sl.map(x=>esc(x.t.name)+" "+x.h).join(" + ")+" (ימי מחלה)":""}</p>`}
   if(ql!==null&&ql<=0)h+=`<div class="note bad">התקן של ${fmtDate(day.date)} נוצל${ql<0?" ואף עבר":""}. אי אפשר לדווח בו עוד שעות.</div>`;
   h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>אפשר עוד שעה?</th><th></th><th>שעות הוראה</th><th>שובץ מ"מ</th></tr></thead><tbody>`;
   for(const r of rows){const st=r.sk?`<span class="pill sick">יום מחלה</span>`:r.f>0?`<span class="pill ok">כן, עוד ${r.f}</span>`:`<span class="pill bad">לא</span>`;
@@ -520,8 +523,8 @@ function vReview(){const R=S.review;const opts=(sel,extra)=>extra+S.teachers.map
   else if(R.kind==="calendar"){if(!R.rows.length)h+=`<div class="note">לא נמצאו חופשות בקובץ.</div>`;
     else h+=`<div class="note">הלוח החדש יחליף את הלוח הקיים.</div><div class="tbl"><table><thead><tr><th>חופשה</th><th>מתאריך</th><th>עד (כולל)</th><th></th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input data-rd="${i}" data-k="name" value="${esc(r.name)}"></td><td><input type="date" data-rd="${i}" data-k="from" value="${r.from}"></td><td><input type="date" data-rd="${i}" data-k="to" value="${r.to}"></td><td><label class="row" style="gap:4px"><input type="checkbox" data-rskip="${i}" ${r.skip?"checked":""}> לדלג</label></td></tr>`).join("")+`</tbody></table></div>`}
   else if(R.kind==="quota"){h+=R.explain?`<p class="muted">${esc(R.explain)}</p>`:"";
-    if(!R.rows.length)h+=`<div class="note">לא נמצאו תאריכים בצילום. אפשר להקליד את התקן לכל יום במסך הסיכום.</div>`;
-    else h+=`<div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>שעות פנויות בתקן</th><th>שעות העדרויות</th><th>סה״כ לדיווח</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input type="date" data-rd="${i}" data-k="date" value="${r.date}"></td><td>${DAYS[new Date(r.date+"T12:00:00").getDay()]||"שבת"}</td><td><input type="number" min="0" data-rd="${i}" data-k="hours" value="${r.hours}"></td><td><input type="number" min="0" data-rd="${i}" data-k="abs" value="${r.abs||0}"></td><td><b>${(+r.hours||0)+(+r.abs||0)}</b></td></tr>`).join("")+`</tbody></table></div><p class="muted" style="font-size:14px">התקן של כל יום יהיה הסכום של שתי העמודות. הסכום מתעדכן אחרי השמירה.</p>`}
+    if(!R.rows.length)h+=`<div class="note">לא נמצאו תאריכים בצילום. אפשר להקליד את המספרים בלוח התקן במסך הסיכום.</div>`;
+    else h+=`<p>מהצילום נלקחה רק השורה <b>העדרות משחררת תקן</b>. שעות של ימי מחלה מתווספות לבד מאישורי המחלה.</p><div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>העדרות משחררת תקן</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input type="date" data-rd="${i}" data-k="date" value="${r.date}"></td><td>${DAYS[new Date(r.date+"T12:00:00").getDay()]||"שבת"}</td><td><input type="number" min="0" data-rd="${i}" data-k="hours" value="${r.hours}"></td></tr>`).join("")+`</tbody></table></div>`}
   else if(!R.rows.length){h+=`<div class="note">לא נמצאו נתונים בקובץ. נסי קובץ ברור יותר או הזיני ידנית.</div>`}
   else if(R.kind==="schedule"){h+=`<p><b>נמצאו ${R.rows.length} מורות</b>${R.parts>1?` (הקובץ נקרא ב-${R.parts} חלקים)`:""}. בדקי שהימים נכונים, במיוחד חמישי ושישי.</p><div class="tbl"><table><thead><tr><th>שם בקובץ</th><th>שיוך</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>`+
     R.rows.map((r,i)=>`<tr><td>${esc(r.name)}</td><td><select data-rmatch="${i}">${opts(r.match,`<option value="new" ${r.match==="new"?"selected":""}>מורה חדשה</option><option value="skip" ${r.match==="skip"?"selected":""}>לדלג</option>`)}</select></td>`+
@@ -638,6 +641,8 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
       S.md.holidays=[...new Set([...S.md.holidays,v])];for(const tid in S.md.subs){delete S.md.subs[tid][v]}render();await saveMonth();return}
     case "add-range":{const n=document.getElementById("rgName").value.trim()||"חופשה",f=document.getElementById("rgFrom").value,t=document.getElementById("rgTo").value||f;
       if(!f)return toast("בחרי תאריך");if(t<f)return toast("תאריך הסיום לפני ההתחלה");S.cal.ranges=[...(S.cal.ranges||[]),{name:n,from:f,to:t}].sort((a,b)=>a.from.localeCompare(b.from));render();await saveCal();return}
+    case "quota-reset":S.confirm="qreset";render();return;
+    case "quota-reset-yes":S.md.quotaDays={};delete S.md.quotaParts;S.confirm=null;render();await saveMonth();toast("התקן מהצילום אופס");return;
     case "wipe":S.confirm="wipe";render();return;
     case "wipe-yes":S.md=emptyMonth();S.confirm=null;render();await saveMonth();toast("נתוני החודש נמחקו");return}
 });

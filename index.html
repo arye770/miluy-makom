@@ -149,7 +149,10 @@ try{S.month=localStorage.getItem("mm.month")||curMonth()}catch(e){S.month=curMon
 
 /* ---------- writes: one at a time per document ---------- */
 const queues={};
-function write(path,data){if(!S.canEdit){toast("אין לך הרשאת עריכה");return Promise.resolve()}const p=(queues[path]||Promise.resolve()).then(()=>S.db.doc(path).set(data)).catch(e=>{
+const stable=o=>JSON.stringify(o,(k,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.keys(v).sort().reduce((a,x)=>(a[x]=v[x],a),{}):v);
+const mine={};function remember(path,data){(mine[path]??=[]).push(stable(data));if(mine[path].length>30)mine[path].shift()}
+function isOldOwnSave(path,data){const l=mine[path];if(!l||!l.length)return false;const j=stable(data);return l.includes(j)&&l[l.length-1]!==j}
+function write(path,data){remember(path,data);if(!S.canEdit){toast("אין לך הרשאת עריכה");return Promise.resolve()}const p=(queues[path]||Promise.resolve()).then(()=>S.db.doc(path).set(data)).catch(e=>{
   toast("השמירה נכשלה. בדקי חיבור לאינטרנט ונסי שוב.");console.error(e)});
   queues[path]=p;return p}
 const saveMonth=()=>write("months/"+S.month,S.md);
@@ -405,6 +408,16 @@ function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
     rows.map(r=>`<tr><td>${fmtDate(r.day.date)}</td><td>${DAYS[r.day.wd]}</td><td>${esc(r.t.name)}</td><td><b>${r.h}</b></td></tr>`).join("")+
     `</tbody><tfoot><tr><th colspan="3">סה״כ</th><th>${rows.reduce((a,r)=>a+r.h,0)}</th></tr></tfoot></table></div>`;
   return h+`</div>`}
+function vPlanResult(){const ts=S.teachers.filter(t=>+S.md.targets[t.id]>0||teacherSubs(t.id)>0);if(!ts.length)return "";
+  const days=monthDays(S.month);let miss=0;
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תוצאת התכנון: איפה לשבץ לכל מורה</h2></div>
+  <div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה</th><th>שובצו</th><th>מתי (תאריך – שעות)</th></tr></thead><tbody>`;
+  for(const t of ts){const tg=+S.md.targets[t.id]||0,s=teacherSubs(t.id);if(tg>s)miss+=tg-s;
+    const when=days.filter(d=>subOf(t.id,d.date)).map(d=>`${fmtDate(d.date)} – ${subOf(t.id,d.date)}`).join(" · ");
+    h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td>${tg||"–"}</td><td><b>${s}</b>${tg>s?` <span class="pill bad">חסרות ${tg-s}</span>`:""}</td><td style="white-space:normal;min-width:220px">${when||`<span class="muted">לא שובץ</span>`}</td></tr>`}
+  h+=`</tbody></table></div>`;
+  if(miss)h+=`<div class="note">חסרות ${miss} שעות שלא נמצא להן מקום: אין מספיק תקן מימי מחלה בימים שבהם המורות האלה פנויות (עד ${S.school.maxDaily} שעות ביום כולל המערכת, לא בימי מחלה וחופשות).</div>`;
+  return h+`</div>`}
 function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
   const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
   const sickCount=Object.entries(S.md.sick).filter(([k,v])=>teacherById(k)&&v.some(d=>d.startsWith(S.month))).length;
@@ -417,6 +430,7 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
   <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
   <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,used/q*100):0}%"></i></div>`;
+  h+=vPlanResult();
   if(!S.teachers.length)h+=`<div class="card"><h2>מתחילים</h2><p>1. העלי את קובץ מערכת השעות בלשונית <b>העלאת קבצים</b> (או הוסיפי מורות ידנית בלשונית <b>מורות</b>).</p><p>2. העלי צילום מסך של שעות התקן לפי ימים ואת אישורי המחלה של החודש.</p><p>3. לחצי <b>תכנון אוטומטי</b>. המערכת תחלק את שעות התקן בין המורות.</p><div class="row"><button class="btn primary" data-tab="import">להעלאת קבצים</button></div></div>`;
   if(!q&&S.teachers.length)h+=`<div class="note">עדיין אין ימי מחלה ב${monthLabel(S.month)}, ולכן אין שעות בתקן. התקן נבנה לבד מאישורי המחלה שמעלים.</div>`;
   if(calDays)h+=`<p class="muted" style="font-size:14px">לפי לוח החופשות של משרד החינוך יש ב${monthLabel(S.month)} ${calDays} ימי חופש, ולא ישובץ בהם מילוי מקום.</p>`;
@@ -624,9 +638,9 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     case "recheck":await loadProfile();render();return;
     case "users-refresh":S.users=null;render();await loadUsers();return;
     case "copy-link":return copyText(location.origin+location.pathname);
-    case "plan":if(Object.keys(S.md.subs).length&&S.confirm!=="replan"){S.confirm="replan";render();return}
     case "plan-one":{const t=teacherById(S.teacher);const r=planTeacher(t);render();await saveMonth();
       toast(r.missing?(r.byQuota?"שובצו "+r.placed+". אין מספיק תקן בימים הפנויים שלה, חסרות "+r.missing:"שובצו "+r.placed+". אין מספיק ימים פנויים, חסרות "+r.missing):"שובצו "+r.placed+" שעות");return}
+    case "plan":if(Object.keys(S.md.subs).length&&S.confirm!=="replan"){S.confirm="replan";render();return}
     case "plan-yes":{S.confirm=null;if(!hasDayQuota()&&!S.teachers.some(t=>+S.md.targets[t.id]>0)){toast("הזיני תקן לפי ימים או כמה שעות כל מורה צריכה לקבל");render();return}
       const r=runPlan();render();await saveMonth();
       toast(r.short.length?"שובץ. ל-"+r.short.length+" מורות אין מספיק ימים פנויים ליעד":r.left>0?"שובץ. נשארו "+r.left+" שעות בתקן בימים שאין בהם מורה פנויה":"התכנון הושלם");return}
@@ -687,7 +701,7 @@ document.getElementById("mNext").onclick=()=>setMonth(shiftMonth(S.month,1));
 
 /* ---------- boot ---------- */
 function subscribeMonth(){if(S.unsubMonth)S.unsubMonth();const m=S.month;
-  S.unsubMonth=S.db.doc("months/"+m).onSnapshot(s=>{if(m!==S.month)return;if(s.metadata.hasPendingWrites&&S.md)return;
+  S.unsubMonth=S.db.doc("months/"+m).onSnapshot(s=>{if(m!==S.month)return;if(s.metadata.hasPendingWrites&&S.md)return;if(S.md&&s.exists&&isOldOwnSave("months/"+m,s.data()))return;
     S.md=Object.assign(emptyMonth(),s.exists?clone(s.data()):{});window.__booted=true;if(!isTyping())render()},err=>{window.__booted=true;showFatal("months: "+(err?.message||err))})}
 function isTyping(){const a=document.activeElement;return a&&(a.tagName==="INPUT"||a.tagName==="SELECT")&&a.type!=="file"&&a.type!=="checkbox"}
 /* ---------- cloud (Supabase) ---------- */

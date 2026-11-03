@@ -198,7 +198,8 @@ function planTeacher(t){const md=S.md,days=monthDays(S.month).filter(dayOpen);co
   for(const d of days){const h=(md.locked[t.id]||{})[d.date]?subOf(t.id,d.date):0;if(h){subs[d.date]=h;have+=h}
     cap[d.date]=Math.max(0,capacity(t,d)-h);pool[d.date]=dayQuota(d.date)-daySubs(d.date,t.id)-h}
   let need=Math.max(0,(+md.targets[t.id]||0)-have);const want=need;
-  while(need>0){const d=pickDay(days,cap,subs,pool);if(!d)break;subs[d.date]=(subs[d.date]||0)+1;cap[d.date]--;pool[d.date]--;need--}
+  while(need>0){let best=null;for(const d of days){const blk=Math.min(need,cap[d.date],pool[d.date]);if(blk>0&&(!best||blk>best.blk))best={d,blk}}
+    if(!best)break;subs[best.d.date]=(subs[best.d.date]||0)+best.blk;cap[best.d.date]-=best.blk;pool[best.d.date]-=best.blk;need-=best.blk}
   const byQuota=need>0&&days.some(d=>cap[d.date]>0);
   md.subs[t.id]=subs;if(!Object.keys(subs).length)delete md.subs[t.id];
   return {placed:want-need,missing:need,byQuota}}
@@ -215,14 +216,26 @@ function runPlan(){
   if(!hasDayQuota()&&!hasTargets)return {left:0,short:[]};
   const need=t=>hasTargets?Math.max(0,(+md.targets[t.id]||0)-assigned[t.id]):Infinity;
   const fair=t=>hasTargets?assigned[t.id]/(+md.targets[t.id]||1):assigned[t.id];
-  for(let guard=0;guard<20000;guard++){
-    const cands=S.teachers.filter(t=>need(t)>0&&days.some(d=>cap[t.id][d.date]>0&&pool[d.date]>0));
-    if(!cands.length)break;
-    cands.sort((a,b)=>fair(a)-fair(b)||a.name.localeCompare(b.name,"he"));
-    const t=cands[0];const demand={};
-    for(const d of days)demand[d.date]=cands.reduce((n,x)=>n+(x!==t&&cap[x.id][d.date]>0?1:0),0);
-    const d=pickDay(days,cap[t.id],subs[t.id],pool,demand);
-    subs[t.id][d.date]=(subs[t.id][d.date]||0)+1;cap[t.id][d.date]--;pool[d.date]--;assigned[t.id]++}
+  const room=(t,d)=>Math.min(cap[t.id][d.date],pool[d.date]);
+  if(!hasTargets){ // no hours entered: share the quota evenly, an hour at a time
+    for(let guard=0;guard<20000;guard++){
+      const cands=S.teachers.filter(t=>days.some(d=>room(t,d)>0));if(!cands.length)break;
+      cands.sort((a,b)=>assigned[a.id]-assigned[b.id]||a.name.localeCompare(b.name,"he"));
+      const t=cands[0];const d=pickDay(days,cap[t.id],subs[t.id],pool);
+      subs[t.id][d.date]=(subs[t.id][d.date]||0)+1;cap[t.id][d.date]--;pool[d.date]--;assigned[t.id]++}
+  }else{
+    // whole days: give a teacher as many hours as fit on one day, so she comes in for a real block.
+    // The teacher with the least room to spare goes first, and she takes the day the others need least.
+    for(let guard=0;guard<5000;guard++){
+      const cands=S.teachers.filter(t=>need(t)>0&&days.some(d=>room(t,d)>0));if(!cands.length)break;
+      const spare=t=>days.reduce((a,d)=>a+room(t,d),0)-need(t);
+      cands.sort((a,b)=>spare(a)-spare(b)||need(b)-need(a)||a.name.localeCompare(b.name,"he"));
+      const t=cands[0],nd=need(t);let best=null;
+      for(const d of days){const blk=Math.min(nd,room(t,d));if(blk<=0)continue;
+        const others=cands.reduce((a,x)=>a+(x!==t?Math.min(need(x),room(x,d)):0),0);
+        const score=blk*1000-others;if(!best||score>best.score)best={d,blk,score}}
+      subs[t.id][best.d.date]=(subs[t.id][best.d.date]||0)+best.blk;cap[t.id][best.d.date]-=best.blk;pool[best.d.date]-=best.blk;assigned[t.id]+=best.blk}
+  }
   for(const tid in subs)if(!Object.keys(subs[tid]).length)delete subs[tid];
   md.subs=subs;
   const left=hasDayQuota()?days.reduce((a,d)=>a+Math.max(0,pool[d.date]),0):0;

@@ -175,9 +175,9 @@ function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.s
 function sickRelease(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return 0;
   let n=0;for(const t of S.teachers)if(isSick(t.id,date))n+=sched(t,wd);return n}
 function sickReleaseList(date){const wd=new Date(date+"T12:00:00").getDay();return S.teachers.filter(t=>isSick(t.id,date)&&sched(t,wd)>0).map(t=>({t,h:sched(t,wd)}))}
-function hasDayQuota(){return Object.values(S.md.quotaDays||{}).some(v=>+v>0)||Object.values(S.md.sick||{}).some(a=>a.length)}
-function dayQuota(date){return hasDayQuota()?(+(S.md.quotaDays||{})[date]||0)+sickRelease(date):Infinity}
-function quotaTotal(){let n=0;for(const d of monthDays(S.month))n+=(+(S.md.quotaDays||{})[d.date]||0)+sickRelease(d.date);return n}
+function hasDayQuota(){return Object.values(S.md.sick||{}).some(a=>a.length)}
+function dayQuota(date){return hasDayQuota()?sickRelease(date):Infinity}
+function quotaTotal(){let n=0;for(const d of monthDays(S.month))n+=sickRelease(d.date);return n}
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=subOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
   for(const t of S.teachers)for(const day of days){const h=subOf(t.id,day.date);if(!h)continue;
@@ -390,14 +390,12 @@ function render(){document.getElementById("mLabel").textContent=monthLabel(S.mon
   const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
 
 function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
-  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תקן מילוי מקום לפי ימים</h2><div class="row">${S.sample?`<button class="btn" data-tab="import">העלאת צילום מסך</button>`:""}<button class="btn danger" data-act="quota-reset">איפוס התקן</button></div></div>
-  ${S.confirm==="qreset"?`<div class="confirm"><span>למחוק את כל המספרים מהצילום של ${monthLabel(S.month)}? שעות ימי המחלה יישארו, כי הן מחושבות מהאישורים.</span><button class="btn danger" data-act="quota-reset-yes">איפוס</button><button class="btn" data-act="cancel">ביטול</button></div>`:""}
-  <p class="muted">התקן של כל יום = <b>העדרות משחררת תקן</b> מאתר משרד החינוך (מקלידים בתיבה) + <b>שעות ימי מחלה</b>: לכל מורה במחלה, מספר שעות ההוראה שלה באותו יום לפי המערכת (מחושב לבד).</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
-  for(const day of days){const open=dayOpen(day),q=+(S.md.quotaDays||{})[day.date]||0,sr=sickRelease(day.date),tot=q+sr,u=daySubs(day.date);
-    const cls=!open?"off":u>tot&&hasDayQuota()?"over":tot&&u===tot?"full":"";
+  let h=`<div class="card"><h2>תקן מילוי מקום לפי ימים</h2>
+  <p class="muted">התקן של כל יום = שעות ימי המחלה: לכל מורה במחלה, מספר שעות ההוראה שלה באותו יום לפי המערכת. מתעדכן לבד כשמעלים אישורי מחלה.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){const open=dayOpen(day),tot=sickRelease(day.date),u=daySubs(day.date);
+    const cls=!open?"off":u>tot?"over":tot&&u===tot?"full":"";
     h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
-    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta">משחרר תקן:</div><input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="העדרות משחררת תקן ${day.d}" title="העדרות משחררת תקן">
-      ${sr?`<div class="meta" style="color:var(--sick);font-weight:700">+ מחלות ${sr}</div>`:""}<div class="meta"><span class="qtag">סה״כ ${tot}</span><br>שובצו <b>${u}</b></div>`;
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta"><span class="qtag">תקן ${tot}</span><br>שובצו <b>${u}</b>${tot>u?`<br>נותרו ${tot-u}`:""}</div>`;
     h+=`</div>`}
   return h+`</div></div>`}
 function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
@@ -407,13 +405,13 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   <div class="row"><button class="btn primary" data-act="plan" ${!S.teachers.length?"disabled":""}>תכנון אוטומטי</button>
   <button class="btn" data-act="export" ${!used?"disabled":""}>הורדה לאקסל</button></div></div>`;
   if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
-  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (צילום + ימי מחלה)</div></div>
+  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (מימי מחלה)</div></div>
   <div class="kpi hl"><div class="n">${used}</div><div class="l">שעות משובצות לדיווח</div></div>
   <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
   <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
   <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,used/q*100):0}%"></i></div>`;
   if(!S.teachers.length)h+=`<div class="card"><h2>מתחילים</h2><p>1. העלי את קובץ מערכת השעות בלשונית <b>העלאת קבצים</b> (או הוסיפי מורות ידנית בלשונית <b>מורות</b>).</p><p>2. העלי צילום מסך של שעות התקן לפי ימים ואת אישורי המחלה של החודש.</p><p>3. לחצי <b>תכנון אוטומטי</b>. המערכת תחלק את שעות התקן בין המורות.</p><div class="row"><button class="btn primary" data-tab="import">להעלאת קבצים</button></div></div>`;
-  if(!q&&S.teachers.length)h+=`<div class="note">עדיין לא הוזן תקן לימים של החודש. הקלידי בלוח למטה כמה שעות פנויות יש בכל יום, או או העלי צילום מסך.</div>`;
+  if(!q&&S.teachers.length)h+=`<div class="note">עדיין אין ימי מחלה ב${monthLabel(S.month)}, ולכן אין שעות בתקן. התקן נבנה לבד מאישורי המחלה שמעלים.</div>`;
   if(calDays)h+=`<p class="muted" style="font-size:14px">לפי לוח החופשות של משרד החינוך יש ב${monthLabel(S.month)} ${calDays} ימי חופש, ולא ישובץ בהם מילוי מקום.</p>`;
   if(probs.length)h+=`<div class="note bad"><b>${probs.length} בעיות בדיווח:</b><br>${probs.slice(0,10).map(esc).join("<br>")}</div>`;
   if(S.teachers.length)h+=vQuotaGrid();
@@ -454,7 +452,7 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
     else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
-      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: ${dayQuota(day.date)}</span><br><span style="font-size:11px">משחרר ${+(S.md.quotaDays||{})[day.date]||0} + מחלות ${sickRelease(day.date)}</span><br>נותרו בתקן: <b>${Math.max(0,pl-v)}</b>`:""}${lk?" · ידני":""}</div>`;
+      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: ${dayQuota(day.date)}</span><br>נותרו בתקן: <b>${Math.max(0,pl-v)}</b>`:""}${lk?" · ידני":""}</div>`;
       h+=sk?`<div class="meta sickl">יום מחלה<br>לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
   h+=`</div></div>`;
@@ -476,8 +474,8 @@ function vDay(){const days=monthDays(S.month).filter(dayOpen);
   h+=`<div class="kpis"><div class="kpi hl"><div class="n">${nFree}</div><div class="l">מורות שאפשר לתת להן עוד שעה ב-${fmtDate(day.date)}</div></div>
     <div class="kpi"><div class="n">${daySubs(day.date)}</div><div class="l">שעות מ"מ ששובצו ביום הזה</div></div>
     ${ql===null?"":`<div class="kpi"><div class="n" style="color:${ql<0?"var(--danger)":"inherit"}">${ql}</div><div class="l">נותרו בתקן של היום</div></div>`}</div>`;
-  if(ql!==null){const sl=sickReleaseList(day.date),q0=+(S.md.quotaDays||{})[day.date]||0;
-    h+=`<p class="muted" style="font-size:14px">תקן היום ${dayQuota(day.date)} = ${q0} העדרות משחררת תקן${sl.length?" + "+sl.map(x=>esc(x.t.name)+" "+x.h).join(" + ")+" (ימי מחלה)":""}</p>`}
+  if(ql!==null){const sl=sickReleaseList(day.date);
+    h+=`<p class="muted" style="font-size:14px">תקן היום ${dayQuota(day.date)}${sl.length?" = "+sl.map(x=>esc(x.t.name)+" "+x.h).join(" + ")+" (ימי מחלה)":" (אין ימי מחלה ביום הזה)"}</p>`}
   if(ql!==null&&ql<=0)h+=`<div class="note bad">התקן של ${fmtDate(day.date)} נוצל${ql<0?" ואף עבר":""}. אי אפשר לדווח בו עוד שעות.</div>`;
   h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>אפשר עוד שעה?</th><th></th><th>שעות הוראה</th><th>שובץ מ"מ</th></tr></thead><tbody>`;
   for(const r of rows){const st=r.sk?`<span class="pill sick">יום מחלה</span>`:r.f>0?`<span class="pill ok">כן, עוד ${r.f}</span>`:`<span class="pill bad">לא</span>`;
@@ -488,8 +486,7 @@ function vDay(){const days=monthDays(S.month).filter(dayOpen);
   // whole month at a glance: hours still free per teacher per day
   h+=`<div class="card"><h2>כל החודש במבט אחד</h2><p class="muted">בכל תא: כמה שעות מ"מ אפשר עוד לתת למורה באותו יום. ריק = לא פנויה.</p>
   <div class="tbl"><table style="font-size:13px"><thead><tr><th>מורה</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center">${DAYS[d.wd].slice(0,1)}׳<br>${fmtDate(d.date)}</th>`).join("")}</tr>
-  ${hasDayQuota()?`<tr><th>תקן היום (משחרר + מחלות)</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center"><span class="qtag" title="משחרר ${+(S.md.quotaDays||{})[d.date]||0} + מחלות ${sickRelease(d.date)}">${dayQuota(d.date)}</span></th>`).join("")}</tr>
-  <tr><th>מתוך זה ממחלות</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center;color:var(--sick)">${sickRelease(d.date)||""}</th>`).join("")}</tr>`:""}</thead><tbody>`;
+  ${hasDayQuota()?`<tr><th>תקן היום (ימי מחלה)</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center"><span class="qtag">${dayQuota(d.date)}</span></th>`).join("")}</tr>`:""}</thead><tbody>`;
   for(const t of S.teachers){h+=`<tr><td style="padding:6px 8px">${esc(t.name)}</td>`+days.map(d=>{const f=freeLeft(t,d),sk=isSick(t.id,d.date);
       return `<td style="padding:6px 4px;text-align:center;${sk?"background:var(--sick-soft);color:var(--sick)":f>0?"background:var(--accent-soft);color:var(--accent);font-weight:700":"color:var(--muted)"}">${sk?"מ":f>0?f:""}</td>`}).join("")+`</tr>`}
   return h+`</tbody></table></div><p class="muted" style="font-size:13px">מ = יום מחלה</p></div>`}
@@ -499,7 +496,7 @@ function vImport(){if(S.review)return vReview();
   return `<div><h1>${S.sample?"העלאת קבצים":"הזנת נתונים"}</h1>${S.sample?`<p class="muted">המערכת קוראת את הקבצים בעצמה ומציגה לך לבדיקה לפני שמירה.</p>`:""}</div>
   ${S.sample?"":`<div class="card"><h2>איפה מזינים כל דבר</h2>
    <p><b>מערכת שעות:</b> בלשונית <button class="linkbtn" data-tab="teachers">מורות</button>, שעות כיתה לכל יום.</p>
-   <p><b>תקן לפי ימים</b> ו<b>שעות לכל מורה:</b> במסך <button class="linkbtn" data-tab="home">סיכום החודש</button>.</p>
+   <p><b>שעות לכל מורה:</b> במסך <button class="linkbtn" data-tab="home">סיכום החודש</button>.</p>
    <p><b>ימי מחלה:</b> כאן למטה, או בלחיצה על "מחלה" בלוח של המורה.</p>
    <p><b>חופשות:</b> בלשונית <button class="linkbtn" data-tab="settings">הגדרות</button>.</p></div>`}
   <div class="grid" ${S.sample?"":"hidden"}>
@@ -509,14 +506,13 @@ function vImport(){if(S.review)return vReview();
     <label class="drop">בחירת קבצים<input type="file" multiple data-up="sick" accept=".pdf,image/*,.xlsx,.csv"></label>${busyLine("sick")}</div>
    <div class="card"><h2>שעות לכל מורה</h2><p class="muted">רשימה של כמה שעות מילוי מקום כל מורה צריכה לקבל ב${monthLabel(S.month)}.</p>
     <label class="drop">בחירת קובץ<input type="file" multiple data-up="targets" accept=".xlsx,.xls,.csv,.pdf,image/*"></label>${busyLine("targets")}</div>
-   <div class="card"><h2>תקן מילוי מקום לפי ימים</h2><p class="muted">צילום מסך מאתר משרד החינוך של השעות הפנויות בכל תאריך ב${monthLabel(S.month)}. אפשר כמה צילומים. כרגע: <b>${quotaTotal()}</b> שעות.</p>
-    <label class="drop">בחירת צילום מסך<input type="file" multiple data-up="quota" accept="image/*,.pdf"></label>${busyLine("quota")}</div>
+
   </div>
   <div class="card"><h2>הזנה ידנית של מחלה</h2><div class="row">
    <label class="f">מורה<select id="mSickT"><option value="">בחרי…</option>${opts}</select></label>
    <label class="f">מתאריך<input type="date" id="mSickF"></label><label class="f">עד תאריך<input type="date" id="mSickTo"></label>
    <button class="btn primary" data-act="manual-sick" style="align-self:flex-end">שמירה</button></div></div>
-  <p class="muted">הזנה ידנית של התקן לכל יום נמצאת במסך <b>סיכום החודש</b>.</p>`}
+  `}
 
 function vReview(){const R=S.review;const opts=(sel,extra)=>extra+S.teachers.map(t=>`<option value="${t.id}" ${sel===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
   let h=`<div><h1>בדיקה לפני שמירה</h1><p class="muted">זה מה שהמערכת מצאה בקבצים. אפשר לתקן ואז לשמור.</p></div>`;

@@ -396,7 +396,7 @@ function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
   for(const day of days){const open=dayOpen(day),q=+(S.md.quotaDays||{})[day.date]||0,sr=sickRelease(day.date),tot=q+sr,u=daySubs(day.date);
     const cls=!open?"off":u>tot&&hasDayQuota()?"over":tot&&u===tot?"full":"";
     h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
-    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="העדרות משחררת תקן ${day.d}" title="העדרות משחררת תקן">
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta">משחרר תקן:</div><input type="number" min="0" id="q-${day.date}" data-qday="${day.date}" value="${q||""}" placeholder="0" aria-label="העדרות משחררת תקן ${day.d}" title="העדרות משחררת תקן">
       ${sr?`<div class="meta" style="color:var(--sick);font-weight:700">+ מחלות ${sr}</div>`:""}<div class="meta"><span class="qtag">סה״כ ${tot}</span><br>שובצו <b>${u}</b></div>`;
     h+=`</div>`}
   return h+`</div></div>`}
@@ -454,7 +454,7 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
     else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
-      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: נותרו ${Math.max(0,pl-v)}</span>`:""}${lk?" · ידני":""}</div>`;
+      if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: ${dayQuota(day.date)}</span><br><span style="font-size:11px">משחרר ${+(S.md.quotaDays||{})[day.date]||0} + מחלות ${sickRelease(day.date)}</span><br>נותרו בתקן: <b>${Math.max(0,pl-v)}</b>`:""}${lk?" · ידני":""}</div>`;
       h+=sk?`<div class="meta sickl">יום מחלה<br>לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
   h+=`</div></div>`;
@@ -487,7 +487,9 @@ function vDay(){const days=monthDays(S.month).filter(dayOpen);
   h+=`</tbody></table></div>`;
   // whole month at a glance: hours still free per teacher per day
   h+=`<div class="card"><h2>כל החודש במבט אחד</h2><p class="muted">בכל תא: כמה שעות מ"מ אפשר עוד לתת למורה באותו יום. ריק = לא פנויה.</p>
-  <div class="tbl"><table style="font-size:13px"><thead><tr><th>מורה</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center">${DAYS[d.wd].slice(0,1)}׳<br>${fmtDate(d.date)}</th>`).join("")}</tr></thead><tbody>`;
+  <div class="tbl"><table style="font-size:13px"><thead><tr><th>מורה</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center">${DAYS[d.wd].slice(0,1)}׳<br>${fmtDate(d.date)}</th>`).join("")}</tr>
+  ${hasDayQuota()?`<tr><th>תקן היום (משחרר + מחלות)</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center"><span class="qtag" title="משחרר ${+(S.md.quotaDays||{})[d.date]||0} + מחלות ${sickRelease(d.date)}">${dayQuota(d.date)}</span></th>`).join("")}</tr>
+  <tr><th>מתוך זה ממחלות</th>${days.map(d=>`<th style="padding:6px 4px;text-align:center;color:var(--sick)">${sickRelease(d.date)||""}</th>`).join("")}</tr>`:""}</thead><tbody>`;
   for(const t of S.teachers){h+=`<tr><td style="padding:6px 8px">${esc(t.name)}</td>`+days.map(d=>{const f=freeLeft(t,d),sk=isSick(t.id,d.date);
       return `<td style="padding:6px 4px;text-align:center;${sk?"background:var(--sick-soft);color:var(--sick)":f>0?"background:var(--accent-soft);color:var(--accent);font-weight:700":"color:var(--muted)"}">${sk?"מ":f>0?f:""}</td>`}).join("")+`</tr>`}
   return h+`</tbody></table></div><p class="muted" style="font-size:13px">מ = יום מחלה</p></div>`}

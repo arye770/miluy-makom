@@ -172,8 +172,10 @@ function noSchedule(t){return !(t.hours||[]).some(h=>+h>0)}
 function freeLeft(t,day){return Math.max(0,capacity(t,day)-subOf(t.id,day.date))}
 function capacity(t,day){ // max substitution hours allowed that day
   if(!dayOpen(day)||isSick(t.id,day.date))return 0;
-  const s=sched(t,day.wd);if(s===0)return +S.school.freeMax||6;
-  return Math.max(0,(+S.school.maxDaily||7)-s)}
+  const s=sched(t,day.wd),lim=dayLimit(day.wd);if(s===0)return Math.min(+S.school.freeMax||6,lim);
+  return Math.max(0,lim-s)}
+const DAYLEN=[5,6,6,6,6,4];
+function dayLimit(wd){const l=(S.school.dayLen||DAYLEN)[wd];return Math.min(+S.school.maxDaily||7,+l>0?+l:DAYLEN[wd]??6)}
 function totalSubs(){let n=0;for(const tid in S.md.subs)if(teacherById(tid))for(const d in S.md.subs[tid])n+=+S.md.subs[tid][d]||0;return n}
 function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.subs[tid][d]||0;return n}
 function sickRelease(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return 0;
@@ -187,7 +189,7 @@ function problems(){const out=[];const days=monthDays(S.month);
   for(const t of S.teachers)for(const day of days){const h=subOf(t.id,day.date);if(!h)continue;
     if(isSick(t.id,day.date))out.push(t.name+" · "+fmtDate(day.date)+": מדווח מילוי מקום ביום מחלה");
     else if(!dayOpen(day))out.push(t.name+" · "+fmtDate(day.date)+": מדווח ביום שאין בו לימודים");
-    else if(sched(t,day.wd)+h>(+S.school.maxDaily||7))out.push(t.name+" · "+fmtDate(day.date)+": עובר "+S.school.maxDaily+" שעות ביום ("+sched(t,day.wd)+" במערכת + "+h+" מילוי)");}
+    else if(sched(t,day.wd)+h>dayLimit(day.wd))out.push(t.name+" · "+fmtDate(day.date)+": עובר "+dayLimit(day.wd)+" שעות לימוד ביום "+DAYS[day.wd]+" ("+sched(t,day.wd)+" במערכת + "+h+" מילוי)");}
   if(hasDayQuota())for(const day of days){const u=daySubs(day.date),q=dayQuota(day.date);if(u>q)out.push(fmtDate(day.date)+": שובצו "+u+" שעות אבל בתקן של היום יש רק "+q)}
   return out}
 // choose a day: spread her hours, leave room on days other teachers depend on
@@ -429,7 +431,7 @@ function vPlanResult(){const ts=S.teachers.filter(t=>+S.md.targets[t.id]>0||teac
     const when=days.filter(d=>subOf(t.id,d.date)).map(d=>`${fmtDate(d.date)} – ${subOf(t.id,d.date)}`).join(" · ");
     h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td>${tg||"–"}</td><td><b>${s}</b>${tg>s?` <span class="pill bad">חסרות ${tg-s}</span>`:""}</td><td style="white-space:normal;min-width:220px">${when||`<span class="muted">לא שובץ</span>`}</td></tr>`}
   h+=`</tbody></table></div>`;
-  if(miss)h+=`<div class="note">חסרות ${miss} שעות שלא נמצא להן מקום: אין מספיק תקן מימי מחלה בימים שבהם המורות האלה פנויות (עד ${S.school.maxDaily} שעות ביום כולל המערכת, לא בימי מחלה וחופשות).</div>`;
+  if(miss)h+=`<div class="note">חסרות ${miss} שעות שלא נמצא להן מקום: אין מספיק תקן מימי מחלה בימים שבהם המורות האלה פנויות (לא יותר משעות הלימוד של אותו יום כולל המערכת, לא בימי מחלה וחופשות).</div>`;
   return h+`</div>`}
 function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
   const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
@@ -455,7 +457,7 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   if(S.teachers.length){h+=`<div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה לקבל</th><th>שובצו</th><th>ימים</th><th>ימי מחלה החודש</th></tr></thead><tbody>`;
     for(const t of S.teachers){const s=teacherSubs(t.id),days=Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length,sick=(S.md.sick[t.id]||[]).filter(d=>d.startsWith(S.month)).length,tg=+S.md.targets[t.id]||0;
       h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td><input type="number" min="0" id="tg-${t.id}" data-target="${t.id}" value="${tg||""}" placeholder="–" aria-label="שעות ל${esc(t.name)}"></td><td><b>${s}</b></td><td>${days}</td><td>${sick?`<span class="pill sick">${sick} ימים</span>`:"0"}</td></tr>`}
-    h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: עד ${S.school.maxDaily} שעות ביום כולל המערכת, ביום בלי שעות הוראה עד ${+S.school.freeMax||6} שעות, לא בימי מחלה, ולא יותר מהתקן של כל יום.</p>`}
+    h+=`</tbody></table></div><p class="muted" style="font-size:14px">לחיצה על מורה פותחת את המסך האישי שלה. כללי התכנון: לא יותר משעות הלימוד של אותו יום (ראשון ${dayLimit(0)}, שני–חמישי ${dayLimit(1)}, שישי ${dayLimit(5)}) כולל המערכת, ביום בלי שעות הוראה עד ${+S.school.freeMax||6} שעות, לא בימי מחלה, ולא יותר מהתקן של כל יום.</p>`}
   return h}
 
 function vTeachers(){let h=`<div class="row" style="justify-content:space-between"><div><h1>מורות ומערכת שעות</h1><p class="muted">מספר שעות ההוראה בכל יום. המספרים נשמרים מיד.</p></div></div>
@@ -571,7 +573,8 @@ let adminSearch=[];
 function vSettings(){const hol=S.md.holidays.filter(d=>d.startsWith(S.month)).sort();
   let h=`<h1>הגדרות</h1>
   <div class="card"><h2>כללי תכנון</h2><div class="row">
-   <label class="f">מקסימום שעות ביום למורה (כולל מערכת)<input type="number" min="1" max="12" id="maxDaily" value="${S.school.maxDaily}"></label>
+   <label class="f">מקסימום שעות ביום למורה (כולל מערכת)<input type="number" min="1" max="12" id="maxDaily" value="${S.school.maxDaily}"></label></div>
+   <p><b>שעות לימוד בכל יום</b> (מערכת + מילוי מקום לא יעברו את זה):</p><div class="row">${DAYS.map((d,i)=>`<label class="f">${d}<input type="number" min="1" max="10" id="dl-${i}" data-daylen="${i}" value="${(S.school.dayLen||DAYLEN)[i]}"></label>`).join("")}
    <label class="f">יום בלי שעות הוראה: עד כמה שעות מ"מ<input type="number" min="1" max="12" id="freeMax" value="${+S.school.freeMax||6}"></label></div>
    <p class="muted" style="font-size:14px">ביום שאין למורה שעות הוראה במערכת היא פנויה למילוי מקום עד המספר הזה (חוץ מימי מחלה וחופשות).</p></div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החופשות של משרד החינוך (יסודי)</h2>
@@ -688,6 +691,7 @@ document.addEventListener("input",e=>{const el=e.target,d=el.dataset;
   if(d.target){const v=Math.max(0,+el.value||0);if(v)S.md.targets[d.target]=v;else delete S.md.targets[d.target];debounce("month",()=>{saveMonth();render()},800);return}
   if(el.id==="target"){const v=Math.max(0,+el.value||0);if(v)S.md.targets[S.teacher]=v;else delete S.md.targets[S.teacher];debounce("month",()=>{saveMonth();render()},700);return}
   if(el.id==="freeMax"){S.school.freeMax=Math.min(12,Math.max(1,+el.value||6));debounce("school",saveSchool);return}
+  if(el.dataset.daylen!==undefined){const a=(S.school.dayLen||DAYLEN).slice();a[+el.dataset.daylen]=Math.min(10,Math.max(1,+el.value||DAYLEN[+el.dataset.daylen]));S.school.dayLen=a;debounce("school",saveSchool);return}
   if(el.id==="maxDaily"){S.school.maxDaily=Math.min(12,Math.max(1,+el.value||7));debounce("school",saveSchool);return}
   if(d.rmatch!==undefined){S.review.rows[+d.rmatch].match=el.value;return}
   if(d.rh!==undefined){S.review.rows[+d.rh].hours[+d.j]=Math.max(0,+el.value||0);return}

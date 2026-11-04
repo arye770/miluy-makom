@@ -460,11 +460,14 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),reported=totalRep(),left=
   <div class="row"><button class="btn primary" data-act="plan" ${!S.teachers.length?"disabled":""}>תכנון אוטומטי</button>
   <button class="btn" data-act="export" ${!used?"disabled":""}>הורדה לאקסל</button></div></div>`;
   if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
-  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (מימי מחלה)</div></div>
-  <div class="kpi hl"><div class="n">${used}</div><div class="l">שעות משובצות לדיווח</div></div>
-  <div class="kpi"><div class="n">${reported}</div><div class="l">שעות שכבר דווחו</div></div>
-  <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
-  <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
+  const toReport=q-reported;
+  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">תקן החודש (מימי מחלה)</div></div>
+  <div class="kpi"><div class="n">${reported}</div><div class="l">כבר דווחו</div></div>
+  <div class="kpi hl"><div class="n" style="${toReport<0?"color:var(--danger)":""}">${toReport}</div><div class="l">${toReport<0?"דווחו יותר מהתקן":"נשאר לדווח החודש"}</div></div></div>
+  <div class="card" style="gap:6px;padding:12px 16px"><p><b>מתוך ${Math.max(0,toReport)} השעות שנשאר לדווח:</b></p>
+   <p>· <b>${used}</b> כבר משובצות למורות ומחכות שתדווחי (בטבלה "מה לדווח לכל מורה" למטה)</p>
+   <p>· <b style="color:${left<0?"var(--danger)":"inherit"}">${left}</b> ${left<0?"שעות חריגה מהתקן":"עוד לא שובצו לאף מורה. כדי לשבץ אותן: מזינים ב״צריכה לקבל״ ולוחצים ״תכנון אוטומטי״"}</p>
+   <p class="muted" style="font-size:13px">${S.teachers.length} מורות · ${sickCount} עם ימי מחלה החודש</p></div>
   <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,(used+reported)/q*100):0}%"></i></div>`;
   h+=vPlanResult();
   if(!S.teachers.length)h+=`<div class="card"><h2>מתחילים</h2><p>1. העלי את קובץ מערכת השעות בלשונית <b>העלאת קבצים</b> (או הוסיפי מורות ידנית בלשונית <b>מורות</b>).</p><p>2. העלי צילום מסך של שעות התקן לפי ימים ואת אישורי המחלה של החודש.</p><p>3. לחצי <b>תכנון אוטומטי</b>. המערכת תחלק את שעות התקן בין המורות.</p><div class="row"><button class="btn primary" data-tab="import">להעלאת קבצים</button></div></div>`;

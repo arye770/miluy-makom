@@ -187,9 +187,11 @@ function teacherSubs(tid){let n=0;for(const d in (S.md.subs[tid]||{}))n+=+S.md.s
 function sickRelease(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return 0;
   let n=0;for(const t of S.teachers)if(isSick(t.id,date))n+=sched(t,wd);return n}
 function sickReleaseList(date){const wd=new Date(date+"T12:00:00").getDay();return S.teachers.filter(t=>isSick(t.id,date)&&sched(t,wd)>0).map(t=>({t,h:sched(t,wd)}))}
-function hasDayQuota(){return Object.values(S.md.sick||{}).some(a=>a.length)}
-function dayQuota(date){return hasDayQuota()?sickRelease(date):Infinity}
-function quotaTotal(){let n=0;for(const d of monthDays(S.month))n+=sickRelease(d.date);return n}
+function hasMoe(){return !!S.md.moeLeft&&Object.keys(S.md.moeLeft).length>0}
+function dayRep(date){let n=0;for(const t of S.teachers)n+=repOf(t.id,date);return n}
+function hasDayQuota(){return hasMoe()||Object.values(S.md.sick||{}).some(a=>a.length)}
+function dayQuota(date){if(!hasDayQuota())return Infinity;if(hasMoe())return (+S.md.moeLeft[date]||0)+dayRep(date);return sickRelease(date)}
+function quotaTotal(){if(!hasDayQuota())return 0;let n=0;for(const d of monthDays(S.month))if(d.wd!==6&&!holidayName(d.date))n+=dayQuota(d.date);return n}
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=usedOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
   for(const t of S.teachers)for(const day of days){const h=usedOf(t.id,day.date);if(!h)continue;
@@ -341,6 +343,15 @@ async function importCalendar(files){const ranges=[];
 החזר JSON בלבד: {"ranges":[{"name":"חנוכה","from":"YYYY-MM-DD","to":"YYYY-MM-DD"}]}`,parts);
     for(const x of (r&&r.ranges)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.from||""))ranges.push({name:String(x.name||"חופשה"),from:x.from,to:/^\d{4}-\d\d-\d\d$/.test(x.to||"")?x.to:x.from})}
   ranges.sort((a,b)=>a.from.localeCompare(b.from));S.review={kind:"calendar",rows:ranges}}
+async function importMoe(files){const found={};let explain="";
+  for(const f of files){const parts=await fileParts(f);
+    const r=await askAI(`זהו צילום מסך מאתר משרד החינוך שמראה כמה שעות מילוי מקום עוד פנויות לדיווח בכל תאריך (חודש ${monthLabel(S.month)}, ${S.month}).
+לכל תאריך, מצא כמה שעות נשארו פנויות לדיווח עכשיו (בדרך כלל עמודה או שורה בשם "יתרה", "נותר", "פנוי" או "יתרה לדיווח"). אם מופיעים גם "תקן" ו"נוצל", החזר את ההפרש (מה שנשאר).
+תאריך בלי שנה שייך לשנה של החודש הזה. תאריך שלא מופיע בצילום לא להחזיר.
+החזר JSON בלבד: {"days":[{"date":"YYYY-MM-DD","left":מספר}],"explain":"משפט קצר: מאיזו עמודה/שורה לקחת"}`,parts);
+    for(const x of (r&&r.days)||[])if(x&&/^\d{4}-\d\d-\d\d$/.test(x.date||""))found[x.date]=Math.max(0,Math.round(+x.left||0));
+    if(r?.explain)explain=String(r.explain)}
+  S.review={kind:"moe",explain,rows:Object.keys(found).sort().map(date=>({date,left:found[date]}))}}
 async function importTargets(files){const names=S.teachers.map(t=>t.name).join(", ");const found=[];
   for(const f of files){const parts=await fileParts(f);
     const r=await askAI(`זו רשימה של מורות ומספר שעות מילוי המקום שכל אחת צריכה לקבל בחודש ${monthLabel(S.month)}.
@@ -382,6 +393,8 @@ async function applyReview(){const R=S.review;
   if(R.kind==="quota"){let n=0,other=0;S.md.quotaDays=S.md.quotaDays||{};delete S.md.quotaParts;
     for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}if(+r.hours>0)S.md.quotaDays[r.date]=+r.hours;else delete S.md.quotaDays[r.date];n++}
     await saveMonth();toast("העדרות משחררת תקן עודכנו ל-"+n+" ימים"+(other?" ("+other+" תאריכים מחודש אחר לא נשמרו)":""));S.view="home"}
+  if(R.kind==="moe"){const m={};let other=0;for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}m[r.date]=Math.max(0,+r.left||0)}
+    if(Object.keys(m).length){S.md.moeLeft=m;await saveMonth();toast("נשמר: מה שנשאר לפי משרד החינוך ב-"+Object.keys(m).length+" ימים. עכשיו לחצי ״תכנון אוטומטי״.")}S.view="home"}
   if(R.kind==="targets"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;if(+r.hours>0)S.md.targets[r.match]=+r.hours;else delete S.md.targets[r.match];n++}
     await saveMonth();toast("נשמרו שעות ל-"+n+" מורות");S.view="home"}
   if(R.kind==="calendar"){const rows=R.rows.filter(r=>r.from&&!r.skip);if(rows.length){S.cal.ranges=rows.map(({name,from,to})=>({name,from,to:to<from?from:to}));S.cal.enabled=true;await saveCal();toast("לוח החופשות עודכן: "+rows.length+" חופשות")}}
@@ -417,7 +430,18 @@ function render(){document.getElementById("mLabel").textContent=monthLabel(S.mon
   const v={home:vHome,teachers:vTeachers,teacher:vTeacher,day:vDay,import:vImport,settings:vSettings,users:vUsers}[S.view]||vHome;
   const focus=document.activeElement?.id;app.innerHTML=v();if(focus){const el=document.getElementById(focus);if(el&&el.tagName!=="BUTTON")el.focus()}}
 
-function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
+function vMoeGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>מה נשאר לדווח לפי משרד החינוך</h2><div class="row">${S.sample?`<button class="btn" data-tab="import">צילום מסך חדש</button>`:""}<button class="btn danger" data-act="moe-clear">חזרה לחישוב מימי מחלה</button></div></div>
+  ${S.confirm==="moeclear"?`<div class="confirm"><span>למחוק את המספרים של משרד החינוך ולחזור לחשב את התקן מימי המחלה?</span><button class="btn danger" data-act="moe-clear-yes">כן</button><button class="btn" data-act="cancel">ביטול</button></div>`:""}
+  <p class="muted">בכל יום: כמה שעות עוד פנויות לדיווח לפי משרד החינוך (אפשר לתקן בתיבה). מתחת: כמה כבר שובצו מתוכן ועוד לא דווחו.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){const open=dayOpen(day),left=+(S.md.moeLeft||{})[day.date]||0,pend=S.teachers.reduce((a,t)=>a+subOf(t.id,day.date),0),rp=dayRep(day.date);
+    const cls=!open?"off":pend>left?"over":left&&pend===left?"full":"";
+    h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta">נשאר:</div><input type="number" min="0" id="m-${day.date}" data-moe="${day.date}" value="${left||""}" placeholder="0" aria-label="נשאר לפי משרד החינוך ${day.d}">
+      <div class="meta">שובצו <b>${pend}</b>${left>pend?` · פנוי ${left-pend}`:""}${rp?`<br><span style="color:var(--accent)">דווחו ${rp} ✓</span>`:""}</div>`;
+    h+=`</div>`}
+  return h+`</div></div>`}
+function vQuotaGrid(){if(hasMoe())return vMoeGrid();const days=monthDays(S.month).filter(d=>d.wd!==6);
   let h=`<div class="card"><h2>תקן מילוי מקום לפי ימים</h2>
   <p class="muted">התקן של כל יום = שעות ימי המחלה: לכל מורה במחלה, מספר שעות ההוראה שלה באותו יום לפי המערכת. מתעדכן לבד כשמעלים אישורי מחלה.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
   for(const day of days){const open=dayOpen(day),tot=sickRelease(day.date),u=daySubs(day.date);
@@ -463,7 +487,7 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),reported=totalRep(),left=
   <button class="btn" data-act="export" ${!used?"disabled":""}>הורדה לאקסל</button></div></div>`;
   if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
   const toReport=q-reported;
-  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">תקן החודש (מימי מחלה)</div></div>
+  h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">${hasMoe()?"תקן החודש (דווחו + נשאר לפי משרד החינוך)":"תקן החודש (מימי מחלה)"}</div></div>
   <div class="kpi"><div class="n">${reported}</div><div class="l">כבר דווחו</div></div>
   <div class="kpi hl"><div class="n" style="${toReport<0?"color:var(--danger)":""}">${toReport}</div><div class="l">${toReport<0?"דווחו יותר מהתקן":"נשאר לדווח החודש"}</div></div></div>
   <div class="card" style="gap:6px;padding:12px 16px"><p><b>מתוך ${Math.max(0,toReport)} השעות שנשאר לדווח:</b></p>
@@ -569,6 +593,8 @@ function vImport(){if(S.review)return vReview();
     <label class="drop">בחירת קובץ<input type="file" multiple data-up="schedule" accept=".xlsx,.xls,.csv,.pdf,image/*"></label>${busyLine("schedule")}</div>
    <div class="card"><h2>אישורי מחלה</h2><p class="muted">כל האישורים שהגיעו החודש. אפשר לבחור כמה בבת אחת.</p>
     <label class="drop">בחירת קבצים<input type="file" multiple data-up="sick" accept=".pdf,image/*,.xlsx,.csv"></label>${busyLine("sick")}</div>
+   <div class="card"><h2>מה נשאר לפי משרד החינוך</h2><p class="muted">צילום מסך של השעות שעוד פנויות לדיווח בכל תאריך, אחרי מה שכבר דיווחת. המערכת תשבץ רק לפיו.</p>
+    <label class="drop">בחירת צילום מסך<input type="file" multiple data-up="moe" accept="image/*,.pdf"></label>${busyLine("moe")}</div>
    <div class="card"><h2>שעות לכל מורה</h2><p class="muted">רשימה של כמה שעות מילוי מקום כל מורה צריכה לקבל ב${monthLabel(S.month)}.</p>
     <label class="drop">בחירת קובץ<input type="file" multiple data-up="targets" accept=".xlsx,.xls,.csv,.pdf,image/*"></label>${busyLine("targets")}</div>
 
@@ -581,7 +607,10 @@ function vImport(){if(S.review)return vReview();
 
 function vReview(){const R=S.review;const opts=(sel,extra)=>extra+S.teachers.map(t=>`<option value="${t.id}" ${sel===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
   let h=`<div><h1>בדיקה לפני שמירה</h1><p class="muted">זה מה שהמערכת מצאה בקבצים. אפשר לתקן ואז לשמור.</p></div>`;
-  if(R.kind==="targets"){if(!R.rows.length)h+=`<div class="note">לא נמצאו נתונים בקובץ.</div>`;
+  if(R.kind==="moe"){h+=R.explain?`<p class="muted">${esc(R.explain)}</p>`:"";
+    if(!R.rows.length)h+=`<div class="note">לא נמצאו תאריכים בצילום.</div>`;
+    else h+=`<div class="note">המספרים האלה יחליפו את החישוב מימי המחלה לגבי מה שעוד לא דווח. ימים שלא מופיעים בטבלה ייחשבו כ-0 שעות פנויות.</div><div class="tbl"><table><thead><tr><th>תאריך</th><th>יום</th><th>נשאר לדווח לפי משרד החינוך</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input type="date" data-rd="${i}" data-k="date" value="${r.date}"></td><td>${DAYS[new Date(r.date+"T12:00:00").getDay()]||"שבת"}</td><td><input type="number" min="0" data-rd="${i}" data-k="left" value="${r.left}"></td></tr>`).join("")+`</tbody></table></div>`}
+  else if(R.kind==="targets"){if(!R.rows.length)h+=`<div class="note">לא נמצאו נתונים בקובץ.</div>`;
     else h+=`<div class="tbl"><table><thead><tr><th>שם בקובץ</th><th>מורה</th><th>שעות</th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td>${esc(r.name)}</td><td><select data-rmatch="${i}">${opts(r.match,`<option value="" ${!r.match?"selected":""}>לא זוהתה – בחרי</option><option value="skip">לדלג</option>`)}</select></td><td><input type="number" min="0" data-rd="${i}" data-k="hours" value="${r.hours}"></td></tr>`).join("")+`</tbody></table></div>`}
   else if(R.kind==="calendar"){if(!R.rows.length)h+=`<div class="note">לא נמצאו חופשות בקובץ.</div>`;
     else h+=`<div class="note">הלוח החדש יחליף את הלוח הקיים.</div><div class="tbl"><table><thead><tr><th>חופשה</th><th>מתאריך</th><th>עד (כולל)</th><th></th></tr></thead><tbody>`+R.rows.map((r,i)=>`<tr><td><input data-rd="${i}" data-k="name" value="${esc(r.name)}"></td><td><input type="date" data-rd="${i}" data-k="from" value="${r.from}"></td><td><input type="date" data-rd="${i}" data-k="to" value="${r.to}"></td><td><label class="row" style="gap:4px"><input type="checkbox" data-rskip="${i}" ${r.skip?"checked":""}> לדלג</label></td></tr>`).join("")+`</tbody></table></div>`}
@@ -708,6 +737,8 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     case "rep-mark":case "rep-undo":{markReported(d.id,d.act==="rep-mark");render();await saveMonth();toast(d.act==="rep-mark"?"סומן כדווח":"הדיווח בוטל, השעות חזרו לרשימה");return}
     case "rep-all":S.confirm="repall";render();return;
     case "rep-all-yes":{S.confirm=null;let n=0;for(const t of S.teachers)if(teacherSubs(t.id)){markReported(t.id,true);n++}render();await saveMonth();toast(n+" מורות סומנו כדווחו");return}
+    case "moe-clear":S.confirm="moeclear";render();return;
+    case "moe-clear-yes":delete S.md.moeLeft;S.confirm=null;render();await saveMonth();toast("חזרנו לחשב את התקן מימי המחלה");return;
     case "quota-reset":S.confirm="qreset";render();return;
     case "quota-reset-yes":S.md.quotaDays={};delete S.md.quotaParts;S.confirm=null;render();await saveMonth();toast("התקן מהצילום אופס");return;
     case "wipe":S.confirm="wipe";render();return;
@@ -719,6 +750,7 @@ document.addEventListener("input",e=>{const el=e.target,d=el.dataset;
   if(d.sub){const tid=S.teacher,v=Math.max(0,Math.round(+el.value||0));S.md.subs[tid]=S.md.subs[tid]||{};S.md.locked[tid]=S.md.locked[tid]||{};
     if(v){S.md.subs[tid][d.sub]=v;S.md.locked[tid][d.sub]=true}else{delete S.md.subs[tid][d.sub];delete S.md.locked[tid][d.sub]}
     debounce("month",()=>{saveMonth();render()},700);return}
+  if(d.moe){const v=Math.max(0,Math.round(+el.value||0));S.md.moeLeft=S.md.moeLeft||{};S.md.moeLeft[d.moe]=v;debounce("month",()=>{saveMonth();render()},800);return}
   if(d.qday){const v=Math.max(0,Math.round(+el.value||0));S.md.quotaDays=S.md.quotaDays||{};if(v)S.md.quotaDays[d.qday]=v;else delete S.md.quotaDays[d.qday];if(S.md.quotaParts)delete S.md.quotaParts[d.qday];debounce("month",()=>{saveMonth();render()},800);return}
   if(d.target){const v=Math.max(0,+el.value||0);if(v)S.md.targets[d.target]=v;else delete S.md.targets[d.target];debounce("month",()=>{saveMonth();render()},800);return}
   if(el.id==="target"){const v=Math.max(0,+el.value||0);if(v)S.md.targets[S.teacher]=v;else delete S.md.targets[S.teacher];debounce("month",()=>{saveMonth();render()},700);return}
@@ -740,7 +772,7 @@ document.addEventListener("change",async e=>{const el=e.target;
   if(el.dataset.rmatch!==undefined){S.review.rows[+el.dataset.rmatch].match=el.value;render();return}
   if(el.dataset.up){const kind=el.dataset.up,files=[...el.files];if(!files.length)return;
     S.busy[kind]="קוראת "+files.length+" קבצים…";render();
-    try{await({schedule:importSchedule,sick:importSick,quota:importQuota,calendar:importCalendar,targets:importTargets})[kind](files)}
+    try{await({schedule:importSchedule,sick:importSick,quota:importQuota,calendar:importCalendar,targets:importTargets,moe:importMoe})[kind](files)}
     catch(err){toast(err?.code==="no_key"||err?.code==="bad_key"?"קריאת הקבצים עוד לא מחוברת (חסר מפתח). פני למי שמתחזק את המערכת.":err?.code==="not_allowed"?"אין לך הרשאה להעלות קבצים":err?.code==="not_granted"?"צריך לאשר למערכת לקרוא קבצים":err?.code==="rate_limited"?"יותר מדי בקשות. נסי שוב בעוד דקה.":err?.message?.startsWith("סוג")||err?.message?.startsWith("קריאת")?err.message:"לא הצלחתי לקרוא את הקובץ. נסי קובץ ברור יותר או הזיני ידנית.");console.error(err)}
     delete S.busy[kind];render()}
 });

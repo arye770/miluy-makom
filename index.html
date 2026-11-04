@@ -144,7 +144,7 @@ function shiftMonth(m,k){let[y,mm]=m.split("-").map(Number);mm+=k;while(mm>12){m
 function monthDays(m){const[y,mm]=m.split("-").map(Number);const n=new Date(y,mm,0).getDate();const out=[];
   for(let d=1;d<=n;d++){const wd=new Date(y,mm-1,d).getDay();out.push({date:m+"-"+pad(d),d,wd})}return out}
 function fmtDate(iso){const[y,m,d]=iso.split("-");return +d+"."+(+m)}
-const emptyMonth=()=>({quotaDays:{},holidays:[],sick:{},subs:{},locked:{},targets:{}});
+const emptyMonth=()=>({quotaDays:{},reported:{},holidays:[],sick:{},subs:{},locked:{},targets:{}});
 try{S.month=localStorage.getItem("mm.month")||curMonth()}catch(e){S.month=curMonth()}
 
 /* ---------- writes: one at a time per document ---------- */
@@ -169,9 +169,13 @@ function calHoliday(date){if(!S.cal.enabled)return null;const r=(S.cal.ranges||[
 function holidayName(date){return S.md.holidays.includes(date)?"חופש":calHoliday(date)}
 function dayOpen(day){return day.wd!==6&&!holidayName(day.date)}
 function noSchedule(t){return !(t.hours||[]).some(h=>+h>0)}
-function freeLeft(t,day){return Math.max(0,capacity(t,day)-subOf(t.id,day.date))}
+function repOf(tid,date){return +(((S.md.reported||{})[tid]||{})[date])||0}
+function usedOf(tid,date){return subOf(tid,date)+repOf(tid,date)}
+function teacherRep(tid){let n=0;for(const d in ((S.md.reported||{})[tid]||{}))n+=+S.md.reported[tid][d]||0;return n}
+function totalRep(){let n=0;for(const t of S.teachers)n+=teacherRep(t.id);return n}
+function freeLeft(t,day){return Math.max(0,capacity(t,day)-usedOf(t.id,day.date))}
 function capacity(t,day){ // max substitution hours allowed that day
-  if(!dayOpen(day)||isSick(t.id,day.date))return 0;
+  if(!dayOpen(day)||isSick(t.id,day.date)||(t.noDays||[]).includes(day.wd))return 0;
   const s=sched(t,day.wd),lim=dayLimit(day.wd);if(s===0)return Math.min(+S.school.freeMax||6,lim);
   return Math.max(0,lim-s)}
 const DAYLEN=[5,6,6,6,6,4];
@@ -184,9 +188,10 @@ function sickReleaseList(date){const wd=new Date(date+"T12:00:00").getDay();retu
 function hasDayQuota(){return Object.values(S.md.sick||{}).some(a=>a.length)}
 function dayQuota(date){return hasDayQuota()?sickRelease(date):Infinity}
 function quotaTotal(){let n=0;for(const d of monthDays(S.month))n+=sickRelease(d.date);return n}
-function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=subOf(t.id,date);return n}
+function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=usedOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
-  for(const t of S.teachers)for(const day of days){const h=subOf(t.id,day.date);if(!h)continue;
+  for(const t of S.teachers)for(const day of days){const h=usedOf(t.id,day.date);if(!h)continue;
+    if(subOf(t.id,day.date)&&(t.noDays||[]).includes(day.wd))out.push(t.name+" · "+fmtDate(day.date)+": משובץ ביום "+DAYS[day.wd]+", שאסור לתת לה בו");
     if(isSick(t.id,day.date))out.push(t.name+" · "+fmtDate(day.date)+": מדווח מילוי מקום ביום מחלה");
     else if(!dayOpen(day))out.push(t.name+" · "+fmtDate(day.date)+": מדווח ביום שאין בו לימודים");
     else if(sched(t,day.wd)+h>dayLimit(day.wd))out.push(t.name+" · "+fmtDate(day.date)+": עובר "+dayLimit(day.wd)+" שעות לימוד ביום "+DAYS[day.wd]+" ("+sched(t,day.wd)+" במערכת + "+h+" מילוי)");}
@@ -196,9 +201,10 @@ function problems(){const out=[];const days=monthDays(S.month);
 function pickDay(days,cap,given,pool,demand){let best=null;for(const d of days){const c=cap[d.date];if(c<=0||pool[d.date]<=0)continue;
   const score=(given[d.date]||0)*100+(demand?demand[d.date]*3:0)-Math.min(pool[d.date],50)-c;if(!best||score<best.score)best={d,score}}return best&&best.d}
 function monthCapacity(t){return monthDays(S.month).reduce((a,d)=>a+capacity(t,d),0)}
+function keepLocked(t,d){return (S.md.locked[t.id]||{})[d.date]&&dayOpen(d)&&!isSick(t.id,d.date)&&!(t.noDays||[]).includes(d.wd)}
 function planTeacher(t){const md=S.md,days=monthDays(S.month).filter(dayOpen);const subs={},cap={},pool={};let have=0;
-  for(const d of days){const h=(md.locked[t.id]||{})[d.date]?subOf(t.id,d.date):0;if(h){subs[d.date]=h;have+=h}
-    cap[d.date]=Math.max(0,capacity(t,d)-h);pool[d.date]=dayQuota(d.date)-daySubs(d.date,t.id)-h}
+  for(const d of days){const h=keepLocked(t,d)?subOf(t.id,d.date):0;if(h){subs[d.date]=h;have+=h}
+    const rp=repOf(t.id,d.date);cap[d.date]=Math.max(0,capacity(t,d)-h-rp);pool[d.date]=dayQuota(d.date)-daySubs(d.date,t.id)-h-rp}
   let need=Math.max(0,(+md.targets[t.id]||0)-have);const want=need;
   while(need>0){let best=null;for(const d of days){const blk=Math.min(need,cap[d.date],pool[d.date]);if(blk>0&&(!best||blk>best.blk))best={d,blk}}
     if(!best)break;subs[best.d.date]=(subs[best.d.date]||0)+best.blk;cap[best.d.date]-=best.blk;pool[best.d.date]-=best.blk;need-=best.blk}
@@ -211,9 +217,10 @@ function runPlan(){
   for(const d of days)pool[d.date]=dayQuota(d.date);
   // keep hand-entered hours
   for(const t of S.teachers){subs[t.id]={};assigned[t.id]=0;cap[t.id]={};
-    for(const day of days){const lockedH=(md.locked[t.id]||{})[day.date]?subOf(t.id,day.date):0;
+    for(const day of days){const lockedH=keepLocked(t,day)?subOf(t.id,day.date):0;
       if(lockedH){subs[t.id][day.date]=lockedH;assigned[t.id]+=lockedH;pool[day.date]-=lockedH}
-      cap[t.id][day.date]=Math.max(0,capacity(t,day)-lockedH)}}
+      const rp=repOf(t.id,day.date);pool[day.date]-=rp;
+      cap[t.id][day.date]=Math.max(0,capacity(t,day)-lockedH-rp)}}
   const hasTargets=S.teachers.some(t=>+md.targets[t.id]>0);
   if(!hasDayQuota()&&!hasTargets)return {left:0,short:[]};
   const need=t=>hasTargets?Math.max(0,(+md.targets[t.id]||0)-assigned[t.id]):Infinity;
@@ -423,17 +430,30 @@ function vQuotaGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
     rows.map(r=>`<tr><td>${fmtDate(r.day.date)}</td><td>${DAYS[r.day.wd]}</td><td>${esc(r.t.name)}</td><td><b>${r.h}</b></td></tr>`).join("")+
     `</tbody><tfoot><tr><th colspan="3">סה״כ</th><th>${rows.reduce((a,r)=>a+r.h,0)}</th></tr></tfoot></table></div>`;
   return h+`</div>`}
-function vPlanResult(){const ts=S.teachers.filter(t=>+S.md.targets[t.id]>0||teacherSubs(t.id)>0);if(!ts.length)return "";
-  const days=monthDays(S.month);let miss=0;
-  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תוצאת התכנון: איפה לשבץ לכל מורה</h2></div>
-  <div class="tbl"><table><thead><tr><th>מורה</th><th>צריכה</th><th>שובצו</th><th>מתי (תאריך – שעות)</th></tr></thead><tbody>`;
-  for(const t of ts){const tg=+S.md.targets[t.id]||0,s=teacherSubs(t.id);if(tg>s)miss+=tg-s;
+function vPlanResult(){const ts=S.teachers.filter(t=>+S.md.targets[t.id]>0||teacherSubs(t.id)>0||teacherRep(t.id)>0);if(!ts.length)return "";
+  const days=monthDays(S.month);let miss=0;const pend=ts.filter(t=>teacherSubs(t.id)>0).length;
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>תוצאת התכנון: מה לדווח לכל מורה</h2>
+    ${pend?`<button class="btn" data-act="rep-all">סימון כל המורות כ״דווח״</button>`:""}</div>
+  ${S.confirm==="repall"?`<div class="confirm"><span>לסמן את כל ${pend} המורות ששובצו להן שעות כאילו דיווחת? אפשר אחר כך לבטל למורה אחת.</span><button class="btn primary" data-act="rep-all-yes">כן, דיווחתי על כולן</button><button class="btn" data-act="cancel">ביטול</button></div>`:""}
+  <p class="muted" style="font-size:14px">אחרי שדיווחת במשרד החינוך לחצי <b>"דווח ✓"</b> ליד המורה: השעות יעברו ל"דווחו", יירדו מ"צריכה לקבל" ולא יוצעו שוב. הן ממשיכות לתפוס את התקן של היום.</p>
+  <div class="tbl"><table><thead><tr><th>מורה</th><th>עוד צריכה</th><th>לדיווח עכשיו</th><th>מתי (תאריך – שעות)</th><th></th><th>כבר דווחו</th></tr></thead><tbody>`;
+  for(const t of ts){const tg=+S.md.targets[t.id]||0,s=teacherSubs(t.id),r=teacherRep(t.id);if(tg>s)miss+=tg-s;
     const when=days.filter(d=>subOf(t.id,d.date)).map(d=>`${fmtDate(d.date)} – ${subOf(t.id,d.date)}`).join(" · ");
-    h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td>${tg||"–"}</td><td><b>${s}</b>${tg>s?` <span class="pill bad">חסרות ${tg-s}</span>`:""}</td><td style="white-space:normal;min-width:220px">${when||`<span class="muted">לא שובץ</span>`}</td></tr>`}
+    h+=`<tr><td><button class="btn" data-teacher="${t.id}" style="padding:4px 10px">${esc(t.name)}</button></td><td>${tg||"–"}</td><td><b>${s||"–"}</b>${tg>s?` <span class="pill bad">חסרות ${tg-s}</span>`:""}</td><td style="white-space:normal;min-width:200px">${when||`<span class="muted">${tg?"לא שובץ":"—"}</span>`}</td>
+    <td>${s?`<button class="btn primary" data-act="rep-mark" data-id="${t.id}" style="padding:4px 10px">דווח ✓</button>`:""}</td>
+    <td>${r?`<span class="pill ok">${r} שעות</span> <button class="btn" data-act="rep-undo" data-id="${t.id}" style="padding:2px 8px;font-size:13px">ביטול</button>`:"–"}</td></tr>`}
   h+=`</tbody></table></div>`;
-  if(miss)h+=`<div class="note">חסרות ${miss} שעות שלא נמצא להן מקום: אין מספיק תקן מימי מחלה בימים שבהם המורות האלה פנויות (לא יותר משעות הלימוד של אותו יום כולל המערכת, לא בימי מחלה וחופשות).</div>`;
+  if(miss)h+=`<div class="note">חסרות ${miss} שעות שלא נמצא להן מקום: אין מספיק תקן מימי מחלה בימים שבהם המורות האלה פנויות. אפשר להעלות עוד אישורי מחלה וללחוץ שוב "תכנון אוטומטי".</div>`;
   return h+`</div>`}
-function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problems();
+function markReported(tid,on){const md=S.md;md.reported=md.reported||{};
+  if(on){const sub=md.subs[tid]||{};let n=0;const r=md.reported[tid]=md.reported[tid]||{};
+    for(const d in sub){r[d]=(+r[d]||0)+(+sub[d]||0);n+=+sub[d]||0}
+    delete md.subs[tid];if(md.locked)delete md.locked[tid];
+    if(md.targets[tid]){const left=Math.max(0,+md.targets[tid]-n);if(left)md.targets[tid]=left;else delete md.targets[tid]}}
+  else{const r=md.reported[tid]||{};let n=0;md.subs[tid]=md.subs[tid]||{};md.locked[tid]=md.locked[tid]||{};
+    for(const d in r){md.subs[tid][d]=(+md.subs[tid][d]||0)+(+r[d]||0);n+=+r[d]||0}
+    delete md.reported[tid];if(n)md.targets[tid]=(+md.targets[tid]||0)+n}}
+function vHome(){const q=quotaTotal(),used=totalSubs(),reported=totalRep(),left=q-used-reported,probs=problems();
   const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
   const sickCount=Object.entries(S.md.sick).filter(([k,v])=>teacherById(k)&&v.some(d=>d.startsWith(S.month))).length;
   let h=`<div class="row" style="justify-content:space-between"><div><h1>${monthLabel(S.month)}</h1><p class="muted">כמה שעות מילוי מקום אפשר לדווח לכל מורה, ובאיזה יום.</p></div>
@@ -442,9 +462,10 @@ function vHome(){const q=quotaTotal(),used=totalSubs(),left=q-used,probs=problem
   if(S.confirm==="replan")h+=`<div class="confirm"><span>התכנון יחליף את השיבוץ האוטומטי הקיים. שעות שהזנת ידנית יישארו.</span><button class="btn primary" data-act="plan-yes">כן, לתכנן מחדש</button><button class="btn" data-act="cancel">ביטול</button></div>`;
   h+=`<div class="kpis"><div class="kpi"><div class="n">${q}</div><div class="l">שעות בתקן (מימי מחלה)</div></div>
   <div class="kpi hl"><div class="n">${used}</div><div class="l">שעות משובצות לדיווח</div></div>
+  <div class="kpi"><div class="n">${reported}</div><div class="l">שעות שכבר דווחו</div></div>
   <div class="kpi"><div class="n" style="color:${left<0?"var(--danger)":"inherit"}">${left}</div><div class="l">${left<0?"חריגה מהתקן":"נותרו בתקן"}</div></div>
   <div class="kpi"><div class="n">${S.teachers.length}</div><div class="l">מורות · ${sickCount} עם ימי מחלה</div></div></div>
-  <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,used/q*100):0}%"></i></div>`;
+  <div class="bar ${left<0?"over":""}"><i style="width:${q?Math.min(100,(used+reported)/q*100):0}%"></i></div>`;
   h+=vPlanResult();
   if(!S.teachers.length)h+=`<div class="card"><h2>מתחילים</h2><p>1. העלי את קובץ מערכת השעות בלשונית <b>העלאת קבצים</b> (או הוסיפי מורות ידנית בלשונית <b>מורות</b>).</p><p>2. העלי צילום מסך של שעות התקן לפי ימים ואת אישורי המחלה של החודש.</p><p>3. לחצי <b>תכנון אוטומטי</b>. המערכת תחלק את שעות התקן בין המורות.</p><div class="row"><button class="btn primary" data-tab="import">להעלאת קבצים</button></div></div>`;
   if(!q&&S.teachers.length)h+=`<div class="note">עדיין אין ימי מחלה ב${monthLabel(S.month)}, ולכן אין שעות בתקן. התקן נבנה לבד מאישורי המחלה שמעלים.</div>`;
@@ -476,6 +497,8 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
   <div class="row" style="justify-content:space-between;align-items:flex-end"><div><h1>${esc(t.name)}</h1><p class="muted">${monthLabel(S.month)} · מערכת: ${[0,1,2,3,4,5].map(i=>DAYS[i].slice(0,1)+"׳ "+sched(t,i)).join(" · ")}</p></div>
   <div class="row" style="align-items:flex-end"><label class="f">שעות שצריכה לקבל החודש<input type="number" min="0" id="target" value="${tg||""}" placeholder="–"></label>
   <button class="btn primary" data-act="plan-one" ${tg?"":"disabled"}>שבצי לה את השעות</button></div></div>
+  <div class="row" style="gap:6px"><span class="muted">ימים שאסור לתת לה מ"מ:</span>${DAYS.map((d,i)=>`<label class="chip"><input type="checkbox" data-noday="${i}" ${(t.noDays||[]).includes(i)?"checked":""}> ${d}</label>`).join("")}</div>
+  ${teacherRep(t.id)?`<div class="note ok">כבר דווחו ${teacherRep(t.id)} שעות (מסומנות בירוק בלוח).</div>`:""}
   ${tg&&s<tg?`<div class="note">שובצו ${s} מתוך ${tg} שעות. לחצי "שבצי לה את השעות" כדי להשלים.</div>`:tg&&s>=tg?`<div class="note ok">כל ${tg} השעות שובצו.</div>`:""}
   <div class="kpis"><div class="kpi hl"><div class="n">${s}</div><div class="l">שעות מילוי מקום לדיווח</div></div>
   <div class="kpi"><div class="n">${Object.values(S.md.subs[t.id]||{}).filter(x=>+x>0).length}</div><div class="l">ימים עם דיווח</div></div>
@@ -483,11 +506,12 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
 </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2>לוח החודש</h2><span class="muted" style="font-size:14px">הקלידי שעות בתא כדי לקבע אותן ידנית · "מחלה" מסמן יום מחלה</span></div><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
   for(const day of days){
-    const open=dayOpen(day),sk=isSick(t.id,day.date),c=capacity(t,day),v=subOf(t.id,day.date),lk=(S.md.locked[t.id]||{})[day.date];
+    const rp=repOf(t.id,day.date),open=dayOpen(day),sk=isSick(t.id,day.date),c=Math.max(0,capacity(t,day)-rp),v=subOf(t.id,day.date),lk=(S.md.locked[t.id]||{})[day.date];
     const cls=!open?"off":sk?"sick":v?"has":"";
     h+=`<div class="day ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span>${open?`<button class="sk" data-sick="${day.date}">${sk?"מחלה ✓":"מחלה"}</button>`:""}</div>`;
     if(!open)h+=`<div class="meta">${esc(holidayName(day.date)||"")}</div>`;
-    else{const pl=dayQuota(day.date)-daySubs(day.date,t.id);const mx=Math.max(0,Math.min(c,pl));
+    else{const pl=dayQuota(day.date)-daySubs(day.date,t.id)-rp;const mx=Math.max(0,Math.min(c,pl));
+      if(rp)h+=`<div class="meta" style="color:var(--accent);font-weight:700">דווחו: ${rp} ✓</div>`;
       if(!sk)h+=`<div class="meta">${sched(t,day.wd)?"שעות הוראה: "+sched(t,day.wd):"אין שעות הוראה"}<br>אפשר להוסיף: <b>${Math.max(0,c-v)}</b>${hasDayQuota()?`<br><span class="qtag">תקן היום: ${dayQuota(day.date)}</span><br>נותרו בתקן: <b>${Math.max(0,pl-v)}</b>`:""}${lk?" · ידני":""}</div>`;
       h+=sk?`<div class="meta sickl">יום מחלה<br>לא לדווח</div>`:`<input type="number" min="0" max="${mx}" id="s-${day.date}" data-sub="${day.date}" value="${v||""}" placeholder="–" ${mx===0&&!v?"disabled":""} aria-label="שעות מילוי ${day.d}">`}
     h+=`</div>`}
@@ -676,6 +700,9 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
       S.md.holidays=[...new Set([...S.md.holidays,v])];for(const tid in S.md.subs){delete S.md.subs[tid][v]}render();await saveMonth();return}
     case "add-range":{const n=document.getElementById("rgName").value.trim()||"חופשה",f=document.getElementById("rgFrom").value,t=document.getElementById("rgTo").value||f;
       if(!f)return toast("בחרי תאריך");if(t<f)return toast("תאריך הסיום לפני ההתחלה");S.cal.ranges=[...(S.cal.ranges||[]),{name:n,from:f,to:t}].sort((a,b)=>a.from.localeCompare(b.from));render();await saveCal();return}
+    case "rep-mark":case "rep-undo":{markReported(d.id,d.act==="rep-mark");render();await saveMonth();toast(d.act==="rep-mark"?"סומן כדווח":"הדיווח בוטל, השעות חזרו לרשימה");return}
+    case "rep-all":S.confirm="repall";render();return;
+    case "rep-all-yes":{S.confirm=null;let n=0;for(const t of S.teachers)if(teacherSubs(t.id)){markReported(t.id,true);n++}render();await saveMonth();toast(n+" מורות סומנו כדווחו");return}
     case "quota-reset":S.confirm="qreset";render();return;
     case "quota-reset-yes":S.md.quotaDays={};delete S.md.quotaParts;S.confirm=null;render();await saveMonth();toast("התקן מהצילום אופס");return;
     case "wipe":S.confirm="wipe";render();return;
@@ -701,6 +728,7 @@ document.addEventListener("change",async e=>{const el=e.target;
   if(el.dataset.role){const id=el.dataset.role,role=el.value;el.disabled=true;
     const {error}=await sb.from("profiles").update({role}).eq("id",id);el.disabled=false;
     if(error){toast("השינוי לא נשמר");await loadUsers();return}const u=(S.users||[]).find(x=>x.id===id);if(u)u.role=role;renderTabs();toast("ההרשאה עודכנה: "+ROLES[role]);return}
+  if(el.dataset.noday!==undefined){const t=teacherById(S.teacher);if(!t)return;const i=+el.dataset.noday;const a=new Set(t.noDays||[]);el.checked?a.add(i):a.delete(i);t.noDays=[...a].sort();render();await saveTeachers();return}
   if(el.id==="calOn"){S.cal.enabled=el.checked;render();saveCal();return}
   if(el.dataset.rskip!==undefined){S.review.rows[+el.dataset.rskip].skip=el.checked;return}
   if(el.id==="onlyTD"){S.school.onlyTeachingDays=el.checked;saveSchool();return}

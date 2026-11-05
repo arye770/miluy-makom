@@ -190,7 +190,10 @@ function sickReleaseList(date){const wd=new Date(date+"T12:00:00").getDay();retu
 function hasMoe(){return !!S.md.moeLeft&&Object.keys(S.md.moeLeft).length>0}
 function dayRep(date){let n=0;for(const t of S.teachers)n+=repOf(t.id,date);return n}
 function hasDayQuota(){return hasMoe()||Object.values(S.md.sick||{}).some(a=>a.length)}
-function dayQuota(date){if(!hasDayQuota())return Infinity;if(hasMoe())return (+S.md.moeLeft[date]||0)+dayRep(date);return sickRelease(date)}
+function isNewSick(tid,date){const b=S.md.moeSickBase;return !!b&&isSick(tid,date)&&!(b[tid]||[]).includes(date)}
+function newSickList(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return [];return S.teachers.filter(t=>isNewSick(t.id,date)&&sched(t,wd)>0).map(t=>({t,h:sched(t,wd)}))}
+function newSickRelease(date){return newSickList(date).reduce((a,x)=>a+x.h,0)}
+function dayQuota(date){if(!hasDayQuota())return Infinity;if(hasMoe())return (+S.md.moeLeft[date]||0)+dayRep(date)+newSickRelease(date);return sickRelease(date)}
 function quotaTotal(){if(!hasDayQuota())return 0;let n=0;for(const d of monthDays(S.month))if(d.wd!==6&&!holidayName(d.date))n+=dayQuota(d.date);return n}
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=usedOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
@@ -394,7 +397,7 @@ async function applyReview(){const R=S.review;
     for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}if(+r.hours>0)S.md.quotaDays[r.date]=+r.hours;else delete S.md.quotaDays[r.date];n++}
     await saveMonth();toast("העדרות משחררת תקן עודכנו ל-"+n+" ימים"+(other?" ("+other+" תאריכים מחודש אחר לא נשמרו)":""));S.view="home"}
   if(R.kind==="moe"){const m={};let other=0;for(const r of R.rows){if(!r.date)continue;if(!r.date.startsWith(S.month)){other++;continue}m[r.date]=Math.max(0,+r.left||0)}
-    if(Object.keys(m).length){S.md.moeLeft=m;await saveMonth();toast("נשמר: מה שנשאר לפי משרד החינוך ב-"+Object.keys(m).length+" ימים. עכשיו לחצי ״תכנון אוטומטי״.")}S.view="home"}
+    if(Object.keys(m).length){S.md.moeLeft=m;S.md.moeSickBase=clone(S.md.sick);await saveMonth();toast("נשמר: מה שנשאר לפי משרד החינוך ב-"+Object.keys(m).length+" ימים. עכשיו לחצי ״תכנון אוטומטי״.")}S.view="home"}
   if(R.kind==="targets"){let n=0;for(const r of R.rows){if(!r.match||r.match==="skip")continue;if(+r.hours>0)S.md.targets[r.match]=+r.hours;else delete S.md.targets[r.match];n++}
     await saveMonth();toast("נשמרו שעות ל-"+n+" מורות");S.view="home"}
   if(R.kind==="calendar"){const rows=R.rows.filter(r=>r.from&&!r.skip);if(rows.length){S.cal.ranges=rows.map(({name,from,to})=>({name,from,to:to<from?from:to}));S.cal.enabled=true;await saveCal();toast("לוח החופשות עודכן: "+rows.length+" חופשות")}}
@@ -433,11 +436,12 @@ function render(){document.getElementById("mLabel").textContent=monthLabel(S.mon
 function vMoeGrid(){const days=monthDays(S.month).filter(d=>d.wd!==6);
   let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>מה נשאר לדווח לפי משרד החינוך</h2><div class="row">${S.sample?`<button class="btn" data-tab="import">צילום מסך חדש</button>`:""}<button class="btn danger" data-act="moe-clear">חזרה לחישוב מימי מחלה</button></div></div>
   ${S.confirm==="moeclear"?`<div class="confirm"><span>למחוק את המספרים של משרד החינוך ולחזור לחשב את התקן מימי המחלה?</span><button class="btn danger" data-act="moe-clear-yes">כן</button><button class="btn" data-act="cancel">ביטול</button></div>`:""}
-  <p class="muted">בכל יום: כמה שעות עוד פנויות לדיווח לפי משרד החינוך (אפשר לתקן בתיבה). מתחת: כמה כבר שובצו מתוכן ועוד לא דווחו.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
-  for(const day of days){const open=dayOpen(day),left=+(S.md.moeLeft||{})[day.date]||0,pend=S.teachers.reduce((a,t)=>a+subOf(t.id,day.date),0),rp=dayRep(day.date);
+  <p class="muted">בכל יום: כמה שעות עוד פנויות לדיווח לפי משרד החינוך (אפשר לתקן בתיבה). אישורי מחלה שמעלים אחרי הצילום מוסיפים שעות מעל זה (בסגול). מתחת: כמה כבר שובצו ועוד לא דווחו.</p><div class="cal">${DAYS.map(d=>`<div class="hd">${d}</div>`).join("")}`;
+  for(const day of days){const open=dayOpen(day),ns=newSickRelease(day.date),left=(+(S.md.moeLeft||{})[day.date]||0)+ns,pend=S.teachers.reduce((a,t)=>a+subOf(t.id,day.date),0),rp=dayRep(day.date);
     const cls=!open?"off":pend>left?"over":left&&pend===left?"full":"";
     h+=`<div class="day qday ${cls}" style="grid-column:${day.wd+1}"><div class="dn"><span>${day.d}</span></div>`;
-    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta">נשאר:</div><input type="number" min="0" id="m-${day.date}" data-moe="${day.date}" value="${left||""}" placeholder="0" aria-label="נשאר לפי משרד החינוך ${day.d}">
+    h+=!open?`<div class="meta">${esc(holidayName(day.date)||"")}</div>`:`<div class="meta">נשאר (משרד החינוך):</div><input type="number" min="0" id="m-${day.date}" data-moe="${day.date}" value="${(+(S.md.moeLeft||{})[day.date]||0)||""}" placeholder="0" aria-label="נשאר לפי משרד החינוך ${day.d}">
+      ${ns?`<div class="meta" style="color:var(--sick);font-weight:700">+ מחלה חדשה ${ns}</div>${newSickList(day.date).map(x=>`<div class="who">${esc(x.t.name)} <b>${x.h}</b></div>`).join("")}<div class="meta"><span class="qtag">סה״כ ${left}</span></div>`:""}
       <div class="meta">שובצו <b>${pend}</b>${left>pend?` · פנוי ${left-pend}`:""}${rp?`<br><span style="color:var(--accent)">דווחו ${rp} ✓</span>`:""}</div>`;
     h+=`</div>`}
   return h+`</div></div>`}
@@ -738,7 +742,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     case "rep-all":S.confirm="repall";render();return;
     case "rep-all-yes":{S.confirm=null;let n=0;for(const t of S.teachers)if(teacherSubs(t.id)){markReported(t.id,true);n++}render();await saveMonth();toast(n+" מורות סומנו כדווחו");return}
     case "moe-clear":S.confirm="moeclear";render();return;
-    case "moe-clear-yes":delete S.md.moeLeft;S.confirm=null;render();await saveMonth();toast("חזרנו לחשב את התקן מימי המחלה");return;
+    case "moe-clear-yes":delete S.md.moeLeft;delete S.md.moeSickBase;S.confirm=null;render();await saveMonth();toast("חזרנו לחשב את התקן מימי המחלה");return;
     case "quota-reset":S.confirm="qreset";render();return;
     case "quota-reset-yes":S.md.quotaDays={};delete S.md.quotaParts;S.confirm=null;render();await saveMonth();toast("התקן מהצילום אופס");return;
     case "wipe":S.confirm="wipe";render();return;

@@ -177,7 +177,7 @@ function freeLeft(t,day){return Math.max(0,capacity(t,day)-usedOf(t.id,day.date)
 function quotaLeft(date){return hasDayQuota()?Math.max(0,dayQuota(date)-daySubs(date)):Infinity}
 function canGive(t,day){return Math.min(freeLeft(t,day),quotaLeft(day.date))}
 function capacity(t,day){ // max substitution hours allowed that day
-  if(!dayOpen(day)||isSick(t.id,day.date)||(t.noDays||[]).includes(day.wd))return 0;
+  if(!dayOpen(day)||isSick(t.id,day.date)||(t.noDays||[]).includes(day.wd)||day.date<((S.md.fromDate||{})[t.id]||""))return 0;
   const s=sched(t,day.wd),lim=dayLimit(day.wd);if(s===0)return Math.min(+S.school.freeMax||6,lim);
   return Math.max(0,lim-s)}
 const DAYLEN=[5,6,6,6,6,4];
@@ -199,6 +199,7 @@ function quotaTotal(){if(!hasDayQuota())return 0;let n=0;for(const d of monthDay
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=usedOf(t.id,date);return n}
 function problems(){const out=[];const days=monthDays(S.month);
   for(const t of S.teachers)for(const day of days){const h=usedOf(t.id,day.date);if(!h)continue;
+    if(subOf(t.id,day.date)&&day.date<((S.md.fromDate||{})[t.id]||""))out.push(t.name+" · "+fmtDate(day.date)+": משובץ לפני "+fmtDate(S.md.fromDate[t.id])+", התאריך שממנו מותר לה");
     if(subOf(t.id,day.date)&&(t.noDays||[]).includes(day.wd))out.push(t.name+" · "+fmtDate(day.date)+": משובץ ביום "+DAYS[day.wd]+", שאסור לתת לה בו");
     if(isSick(t.id,day.date))out.push(t.name+" · "+fmtDate(day.date)+": מדווח מילוי מקום ביום מחלה");
     else if(!dayOpen(day))out.push(t.name+" · "+fmtDate(day.date)+": מדווח ביום שאין בו לימודים");
@@ -209,7 +210,7 @@ function problems(){const out=[];const days=monthDays(S.month);
 function pickDay(days,cap,given,pool,demand){let best=null;for(const d of days){const c=cap[d.date];if(c<=0||pool[d.date]<=0)continue;
   const score=(given[d.date]||0)*100+(demand?demand[d.date]*3:0)-Math.min(pool[d.date],50)-c;if(!best||score<best.score)best={d,score}}return best&&best.d}
 function monthCapacity(t){return monthDays(S.month).reduce((a,d)=>a+capacity(t,d),0)}
-function keepLocked(t,d){return (S.md.locked[t.id]||{})[d.date]&&dayOpen(d)&&!isSick(t.id,d.date)&&!(t.noDays||[]).includes(d.wd)}
+function keepLocked(t,d){return (S.md.locked[t.id]||{})[d.date]&&dayOpen(d)&&!isSick(t.id,d.date)&&!(t.noDays||[]).includes(d.wd)&&d.date>=((S.md.fromDate||{})[t.id]||"")}
 function planTeacher(t){const md=S.md,days=monthDays(S.month).filter(dayOpen);const subs={},cap={},pool={};let have=0;
   for(const d of days){const h=keepLocked(t,d)?subOf(t.id,d.date):0;if(h){subs[d.date]=h;have+=h}
     const rp=repOf(t.id,d.date);cap[d.date]=Math.max(0,capacity(t,d)-h-rp);pool[d.date]=dayQuota(d.date)-daySubs(d.date,t.id)-h-rp}
@@ -531,6 +532,7 @@ function vTeacher(){const t=teacherById(S.teacher);if(!t){S.view="teachers";retu
   <div class="row" style="justify-content:space-between;align-items:flex-end"><div><h1>${esc(t.name)}</h1><p class="muted">${monthLabel(S.month)} · מערכת: ${[0,1,2,3,4,5].map(i=>DAYS[i].slice(0,1)+"׳ "+sched(t,i)).join(" · ")}</p></div>
   <div class="row" style="align-items:flex-end"><label class="f">שעות שצריכה לקבל החודש<input type="number" min="0" id="target" value="${tg||""}" placeholder="–"></label>
   <button class="btn primary" data-act="plan-one" ${tg?"":"disabled"}>שבצי לה את השעות</button></div></div>
+  <div class="row" style="gap:6px"><label class="row" style="gap:6px"><span class="muted">לשבץ רק מתאריך (ב${monthLabel(S.month)}):</span><input type="date" id="fromDate" min="${S.month}-01" max="${S.month}-31" value="${(S.md.fromDate||{})[t.id]||""}"></label>${(S.md.fromDate||{})[t.id]?`<button class="btn" data-act="from-clear" style="padding:3px 10px">בלי הגבלה</button>`:""}</div>
   <div class="row" style="gap:6px"><span class="muted">ימים שאסור לתת לה מ"מ:</span>${DAYS.map((d,i)=>`<label class="chip"><input type="checkbox" data-noday="${i}" ${(t.noDays||[]).includes(i)?"checked":""}> ${d}</label>`).join("")}</div>
   ${teacherRep(t.id)?`<div class="note ok">כבר דווחו ${teacherRep(t.id)} שעות (מסומנות בירוק בלוח).</div>`:""}
   ${tg&&s<tg?`<div class="note">שובצו ${s} מתוך ${tg} שעות. לחצי "שבצי לה את השעות" כדי להשלים.</div>`:tg&&s>=tg?`<div class="note ok">כל ${tg} השעות שובצו.</div>`:""}
@@ -744,6 +746,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     case "rep-all-yes":{S.confirm=null;let n=0;for(const t of S.teachers)if(teacherSubs(t.id)){markReported(t.id,true);n++}render();await saveMonth();toast(n+" מורות סומנו כדווחו");return}
     case "moe-clear":S.confirm="moeclear";render();return;
     case "moe-clear-yes":delete S.md.moeLeft;delete S.md.moeSickBase;delete S.md.moeRepBase;S.confirm=null;render();await saveMonth();toast("חזרנו לחשב את התקן מימי המחלה");return;
+    case "from-clear":if(S.md.fromDate)delete S.md.fromDate[S.teacher];render();await saveMonth();return;
     case "quota-reset":S.confirm="qreset";render();return;
     case "quota-reset-yes":S.md.quotaDays={};delete S.md.quotaParts;S.confirm=null;render();await saveMonth();toast("התקן מהצילום אופס");return;
     case "wipe":S.confirm="wipe";render();return;
@@ -771,6 +774,7 @@ document.addEventListener("change",async e=>{const el=e.target;
     const {error}=await sb.from("profiles").update({role}).eq("id",id);el.disabled=false;
     if(error){toast("השינוי לא נשמר");await loadUsers();return}const u=(S.users||[]).find(x=>x.id===id);if(u)u.role=role;renderTabs();toast("ההרשאה עודכנה: "+ROLES[role]);return}
   if(el.dataset.noday!==undefined){const t=teacherById(S.teacher);if(!t)return;const i=+el.dataset.noday;const a=new Set(t.noDays||[]);el.checked?a.add(i):a.delete(i);t.noDays=[...a].sort();render();await saveTeachers();return}
+  if(el.id==="fromDate"){S.md.fromDate=S.md.fromDate||{};if(el.value&&el.value.startsWith(S.month))S.md.fromDate[S.teacher]=el.value;else delete S.md.fromDate[S.teacher];render();await saveMonth();toast(el.value?"מעכשיו ישובץ לה רק מ-"+fmtDate(el.value):"ההגבלה בוטלה");return}
   if(el.id==="calOn"){S.cal.enabled=el.checked;render();saveCal();return}
   if(el.dataset.rskip!==undefined){S.review.rows[+el.dataset.rskip].skip=el.checked;return}
   if(el.id==="onlyTD"){S.school.onlyTeachingDays=el.checked;saveSchool();return}

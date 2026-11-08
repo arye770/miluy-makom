@@ -252,7 +252,7 @@ function runPlan(){
       const rp=repOf(t.id,day.date);pool[day.date]-=rp;
       cap[t.id][day.date]=Math.max(0,capacity(t,day)-lockedH-rp)}}
   const hasTargets=S.teachers.some(t=>+md.targets[t.id]>0);
-  if(!hasDayQuota()&&!hasTargets)return {left:0,short:[]};
+  if(!hasTargets)return {left:0,short:[],none:true};
   const need=t=>hasTargets?Math.max(0,(+md.targets[t.id]||0)-assigned[t.id]):Infinity;
   const fair=t=>hasTargets?assigned[t.id]/(+md.targets[t.id]||1):assigned[t.id];
   const room=(t,d)=>Math.min(cap[t.id][d.date],pool[d.date]);
@@ -748,7 +748,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest("button");i
     case "plan-one":{const t=teacherById(S.teacher);const r=planTeacher(t);render();await saveMonth();
       toast(r.missing?(r.byQuota?"שובצו "+r.placed+". אין מספיק תקן בימים הפנויים שלה, חסרות "+r.missing:"שובצו "+r.placed+". אין מספיק ימים פנויים, חסרות "+r.missing):"שובצו "+r.placed+" שעות");return}
     case "plan":if(Object.keys(S.md.subs).length&&S.confirm!=="replan"){S.confirm="replan";render();return}
-    case "plan-yes":{S.confirm=null;if(!hasDayQuota()&&!S.teachers.some(t=>+S.md.targets[t.id]>0)){toast("הזיני תקן לפי ימים או כמה שעות כל מורה צריכה לקבל");render();return}
+    case "plan-yes":{S.confirm=null;if(!S.teachers.some(t=>+S.md.targets[t.id]>0)){toast("אין אף מורה עם מספר ב״צריכה לקבל״, ולכן אין מה לשבץ. ממלאים קודם כמה שעות כל מורה צריכה.");render();return}
       const r=runPlan();render();await saveMonth();
       toast(r.short.length?"שובץ. ל-"+r.short.length+" מורות אין מספיק ימים פנויים ליעד":r.left>0?"שובץ. נשארו "+r.left+" שעות בתקן בימים שאין בהם מורה פנויה":"התכנון הושלם");return}
     case "cancel":S.confirm=null;render();return;

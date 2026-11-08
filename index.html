@@ -193,7 +193,8 @@ function hasDayQuota(){return hasMoe()||Object.values(S.md.sick||{}).some(a=>a.l
 function isNewSick(tid,date){const b=S.md.moeSickBase;return !!b&&isSick(tid,date)&&!(b[tid]||[]).includes(date)}
 function newSickList(date){const wd=new Date(date+"T12:00:00").getDay();if(wd===6||holidayName(date))return [];return S.teachers.filter(t=>isNewSick(t.id,date)&&sched(t,wd)>0).map(t=>({t,h:sched(t,wd)}))}
 function newSickRelease(date){return newSickList(date).reduce((a,x)=>a+x.h,0)}
-function baseRep(date){const b=S.md.moeRepBase;if(!b)return dayRep(date);let n=0;for(const k in b)n+=+(b[k]||{})[date]||0;return n}
+// reports that were in place when the screenshot was taken and are still reported; one that was undone since was cancelled at the ministry, and the screenshot already shows what is free
+function baseRep(date){const b=S.md.moeRepBase;if(!b)return dayRep(date);let n=0;for(const k in b)n+=Math.min(+(b[k]||{})[date]||0,repOf(k,date));return n}
 function dayQuota(date){if(!hasDayQuota())return Infinity;if(hasMoe())return (+S.md.moeLeft[date]||0)+baseRep(date)+newSickRelease(date);return sickRelease(date)}
 function quotaTotal(){if(!hasDayQuota())return 0;let n=0;for(const d of monthDays(S.month))if(d.wd!==6&&!holidayName(d.date))n+=dayQuota(d.date);return n}
 function daySubs(date,exceptTid){let n=0;for(const t of S.teachers)if(t.id!==exceptTid)n+=usedOf(t.id,date);return n}

@@ -485,7 +485,9 @@ function markReported(tid,on){const md=S.md;md.reported=md.reported||{};
     if(md.targets[tid]){const left=Math.max(0,+md.targets[tid]-n);if(left)md.targets[tid]=left;else delete md.targets[tid]}}
   else{const r=md.reported[tid]||{};let n=0;md.subs[tid]=md.subs[tid]||{};md.locked[tid]=md.locked[tid]||{};
     for(const d in r){md.subs[tid][d]=(+md.subs[tid][d]||0)+(+r[d]||0);n+=+r[d]||0}
-    delete md.reported[tid];if(n)md.targets[tid]=(+md.targets[tid]||0)+n}}
+    delete md.reported[tid];if(n)md.targets[tid]=(+md.targets[tid]||0)+n;
+    // an undone report was cancelled at the ministry: it no longer belongs to the screenshot, and reporting it again is a new report
+    if(md.moeRepBase)delete md.moeRepBase[tid]}}
 function vHome(){const q=quotaTotal(),used=totalSubs(),reported=totalRep(),left=q-used-reported,probs=problems();
   const calDays=monthDays(S.month).filter(d=>d.wd!==6&&calHoliday(d.date)).length;
   const sickCount=Object.entries(S.md.sick).filter(([k,v])=>teacherById(k)&&v.some(d=>d.startsWith(S.month))).length;
